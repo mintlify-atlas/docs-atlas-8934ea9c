@@ -1,0 +1,108 @@
+{
+  "projectType": "saas",
+  "projectName": "CotizaClima",
+  "projectDescription": "A complete air conditioning quotation system for managing equipment sales, services, clients, and generating professional PDF quotes.",
+  "theme": "palm",
+  "primaryColor": "#2B7FE3",
+  "lightColor": "#4A9FF5",
+  "darkColor": "#1A5FB8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/quotation-wizard",
+              "features/equipment-catalog",
+              "features/client-management",
+              "features/pdf-generation"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/firebase-setup",
+              "configuration/authentication",
+              "configuration/database-structure"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/creating-quotes",
+              "guides/managing-clients",
+              "guides/quote-history",
+              "guides/customization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/firebase-auth",
+              "api/quotes-repo",
+              "api/client-repo",
+              "api/ranking-repo"
+            ]
+          },
+          {
+            "group": "Components",
+            "pages": [
+              "api/quote-persistence",
+              "api/services",
+              "api/app-state"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-step quotation wizard with equipment selection",
+    "Equipment catalog with advanced filtering (brand, BTU, refrigerant)",
+    "Client management with RUT-based deduplication",
+    "Service selection (installation, maintenance, repair)",
+    "Accessories and extras management",
+    "Professional PDF quote generation",
+    "Quote history and persistence",
+    "Firebase Authentication integration",
+    "Firebase Realtime Database integration",
+    "Equipment popularity ranking system",
+    "GPS-based address autocomplete",
+    "Responsive mobile-first design"
+  ],
+  "publicApiSurface": [
+    "FirebaseAuthService.signIn(email, password)",
+    "FirebaseAuthService.signOut()",
+    "FirebaseAuthService.getCurrentUser()",
+    "FirebaseAuthService.getValidIdToken()",
+    "QuotesRepo.listQuotes(uid, idToken)",
+    "QuotesRepo.getQuote(uid, idToken, quoteId)",
+    "QuotesRepo.saveQuote(uid, idToken, quotePayload, quoteId)",
+    "QuotesRepo.deleteQuote(uid, idToken, quoteId)",
+    "ClientRepo.listClients(uid, idToken)",
+    "ClientRepo.saveClientWithId(uid, idToken, clientData, clientId)",
+    "ClientRepo.syncClientForQuote(uid, idToken, clientObject, quoteId)",
+    "RankingRepo.getRankings(uid, idToken)",
+    "RankingRepo.incrementAcRankings(uid, idToken, equipmentSelections)",
+    "CotizQuotePersistence.persistCurrentQuote(status, options)",
+    "CotizPersistenceBridge.exportQuoteSnapshot(status)",
+    "CotizPersistenceBridge.importQuoteSnapshot(payload)",
+    "generatePDF()",
+    "saveDraftQuote()"
+  ]
+}
