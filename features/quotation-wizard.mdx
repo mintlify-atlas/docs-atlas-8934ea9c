@@ -1,0 +1,356 @@
+---
+title: Quotation Wizard
+description: Multi-step guided workflow for creating complete HVAC quotations
+---
+
+The quotation wizard is the core user interface of CotizaClima, guiding users through a 5-step process to create professional air conditioning quotations. The wizard ensures all required information is collected and validated before generating the final PDF.
+
+## Overview
+
+The wizard implements a progressive disclosure pattern, breaking down the complex quotation process into manageable steps:
+
+<Steps>
+  <Step title="Equipment Selection">
+    Browse and filter the equipment catalog to select air conditioning units by brand, BTU capacity, and refrigerant type.
+  </Step>
+  
+  <Step title="Service Type">
+    Choose the type of service to provide: installation, maintenance, repair, equipment change, warranty visit, or quote only.
+  </Step>
+  
+  <Step title="Accessories & Extras">
+    Add optional accessories like piping kits, drainage systems, electrical cords, and mounting hardware.
+  </Step>
+  
+  <Step title="Client Information">
+    Enter customer details including name, RUT, contact information, and installation address with GPS support.
+  </Step>
+  
+  <Step title="Summary & PDF">
+    Review the complete quotation, adjust prices and discounts, then generate the professional PDF document.
+  </Step>
+</Steps>
+
+## Step Navigation
+
+The wizard provides multiple navigation methods to accommodate different user preferences:
+
+### Visual Step Indicator
+
+Located at the top of the screen (index.html:39-66), the step bar shows:
+- Current step highlighted with active state
+- Completed steps marked with checkmarks
+- Future steps shown as inactive
+- Visual connection lines between steps
+
+```html
+<div class="step-bar">
+  <div class="steps-track">
+    <div class="step-col">
+      <div class="step-dot active" id="sd1">1</div>
+      <div class="step-label active" id="sl1">Equipo</div>
+    </div>
+    <div class="step-line" id="sline1"></div>
+    <!-- ... additional steps -->
+  </div>
+</div>
+```
+
+### Bottom Navigation Bar
+
+The bottom navigation (index.html:383-400) provides quick access to any step:
+
+```html
+<div class="bottom-nav">
+  <button class="nav-item active" id="nav1" onclick="goToStep(1)">
+    <span class="nav-icon"><i class="fas fa-snowflake"></i></span>Equipo
+  </button>
+  <!-- ... navigation items for each step -->
+</div>
+```
+
+### Floating Wizard Controls
+
+Previous/Next buttons float at the bottom right (index.html:403-413), automatically enabling when required fields are complete:
+
+```javascript
+function updateWizardNav() {
+  const step = window.currentStep || 1;
+  const nextBtn = document.getElementById('btnWizardNext');
+  
+  let enabled = true;
+  if (step === 1) {
+    const hasItems = getSelectedEquipmentItems().length > 0;
+    enabled = hasItems;
+  }
+  
+  nextBtn.disabled = !enabled;
+}
+```
+
+## Step-by-Step Workflow
+
+### Step 1: Equipment Selection
+
+The equipment page (index.html:72-113) includes:
+
+**Search and Filters**
+- Real-time search by brand or model (app.js:665-694)
+- Brand dropdown populated from catalog
+- BTU capacity filter (9K, 12K, 14K, 18K, 22K, 24K, 36K)
+- Refrigerant type filter (R32, R410)
+- "Más cotizados" button to sort by popularity
+
+**Equipment Cards**
+
+Each card displays (app.js:544-608):
+- Brand logo (auto-loaded from assets/img/)
+- Model name and type
+- Refrigerant badge (R32/R410)
+- Popularity ranking (fire icon with count)
+- BTU capacity buttons
+- Specifications: WiFi, warranty, installation kit
+
+**Multi-Quantity Selection**
+
+Users can select multiple units of the same or different models:
+
+```javascript
+function selectAC(idx, btu) {
+  const key = equipKey(idx, Number(btu));
+  selectedEquipments[key] = (selectedEquipments[key] || 0) + 1;
+  updateStep1NextButton();
+  renderACGrid();
+}
+```
+
+<Note>
+  The wizard validates that at least one equipment is selected before allowing progression to step 2.
+</Note>
+
+### Step 2: Service Type
+
+The service page (index.html:116-134) displays service cards with dynamic pricing:
+
+**Available Services** (app.js:5-12):
+
+<CardGroup cols={2}>
+  <Card title="Instalación nueva" icon="hammer">
+    First-time installation with configurable unit price (default: $100,000)
+  </Card>
+  
+  <Card title="Mantención" icon="screwdriver-wrench">
+    Cleaning and general inspection (default: $30,000 per unit)
+  </Card>
+  
+  <Card title="Cambio + instalación" icon="arrow-right-arrow-left">
+    Removal of old equipment plus new installation ($120,000)
+  </Card>
+  
+  <Card title="Reparación" icon="gear">
+    Diagnosis and repair with configurable quantity and price
+  </Card>
+  
+  <Card title="Visita garantía" icon="shield">
+    Warranty inspection visit (no cost)
+  </Card>
+  
+  <Card title="Solo presupuesto" icon="clipboard-list">
+    Quote-only without installation (no cost)
+  </Card>
+</CardGroup>
+
+**Multi-Service Support**
+
+Installation and maintenance services support multiple quantities with inline controls (app.js:699-769):
+
+```javascript
+// Pre-load installation quantities based on equipment count
+function preloadInstallationsFromEquipment() {
+  const equipCount = getEquipCount();
+  if ((serviceQtyMap.instalacion || 0) === 0) {
+    serviceQtyMap.instalacion = equipCount;
+  }
+}
+```
+
+**Service Notes**
+
+A textarea allows adding observations about installation conditions, piping length, access requirements, etc. These notes appear in the final PDF.
+
+### Step 3: Accessories & Extras
+
+The accessories page (index.html:137-156) displays a grid of optional add-ons:
+
+**Accessory Categories** (loaded from Firebase or demo data):
+- Piping kits (cañerías) for different BTU ranges
+- Electrical cords (15A, 25A)
+- Ceiling mounts and supports
+- Drainage kits
+- Circuit breakers
+- Refrigerant gas refills (R410/R32)
+- Maintenance/cleaning services
+
+**Quantity Controls** (app.js:965-969):
+
+```javascript
+function changeQty(id, delta) {
+  accQty[id] = Math.max(0, (accQty[id] || 0) + delta);
+  document.getElementById('qty-'+id).value = accQty[id];
+  updateAccSummary();
+}
+```
+
+The summary chip automatically updates to show total items and cost.
+
+### Step 4: Client Information
+
+The client page (index.html:159-230) collects comprehensive customer data:
+
+**Required Fields**:
+- Full name (validated before PDF generation)
+- Installation address
+
+**Optional Fields**:
+- RUT (Chilean tax ID, used for deduplication)
+- Phone number
+- Email address
+- City and region
+- Property type (house, apartment, office, commercial, warehouse/industrial)
+- Additional notes
+
+**GPS Address Autofill** (app.js:1721-1892):
+
+The "Usar GPS" button uses browser geolocation and OpenStreetMap Nominatim reverse geocoding:
+
+```javascript
+function fillAddressFromGPS() {
+  setGpsButtonLoading(true);
+  setGpsStatus('Obteniendo ubicación...');
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      // Reverse geocode using Nominatim API
+      const address = buildStreetAddressWithFallback(data.address, data.display_name);
+      // Auto-fill form fields
+    },
+    (error) => {
+      setGpsStatus('No se pudo obtener ubicación', true);
+    }
+  );
+}
+```
+
+<Note>
+  Clients with a valid RUT are automatically deduplicated in the client directory. The system preserves client history and links all their quotations.
+</Note>
+
+### Step 5: Summary & PDF
+
+The final step (index.html:234-347) displays a comprehensive review:
+
+**Summary Cards**:
+- Quote metadata (number, date, validity)
+- Client information
+- Equipment details with editable pricing
+- Service details with editable pricing
+- Accessories (if any)
+- Discount percentage with calculated amount
+- Grand total with IVA included
+
+**Editable Pricing** (app.js:1118-1131):
+
+```javascript
+function recalcTotal() {
+  const equipPrice = parseFloat(document.getElementById('sumEquipPrice').value) || 0;
+  const servicePrice = parseFloat(document.getElementById('sumServicePrice').value) || 0;
+  const extrasTotal = calculateAccessoriesTotal();
+  const subtotal = equipPrice + servicePrice + extrasTotal;
+  const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
+  const discAmt = subtotal * discPct / 100;
+  const total = subtotal - discAmt;
+  
+  document.getElementById('grandTotal').textContent = fmtNum(Math.round(total));
+}
+```
+
+**Actions**:
+- Generate PDF (see [PDF Generation](/features/pdf-generation))
+- Edit client data (returns to step 4)
+- Save draft (persists to Firebase if logged in)
+- Start new quotation (resets all state)
+
+## State Management
+
+The wizard maintains global state variables (app.js:85-104):
+
+```javascript
+let selectedEquipments = {};       // Map of equipment selections with quantities
+let selectedService = null;         // Single-select service ID
+let serviceQtyMap = {};            // Multi-quantity services (instalacion, mantencion)
+let accQty = {};                   // Accessory quantities by ID
+let currentStep = 1;               // Active wizard step
+let quoteNumber = '';              // Generated quote number
+let activeQuoteId = null;          // Firebase ID when editing saved quote
+```
+
+## Validation Rules
+
+### Step 1 → Step 2
+- At least one equipment must be selected
+- Button state: `updateStep1NextButton()` checks `getSelectedEquipmentItems().length > 0`
+
+### Step 2 → Step 3
+- At least one service must be selected (either multi-quantity or single-select)
+- Button state: `updateStep2NextButton()` validates service selection
+
+### Step 3 → Step 4
+- No validation required (accessories are optional)
+
+### Step 4 → Step 5
+- Client name is required for PDF generation
+- Address is required for PDF generation
+- Other fields are optional but recommended
+
+## Responsive Design
+
+The wizard adapts to different screen sizes:
+
+- **Desktop**: Step indicator + bottom nav + floating controls
+- **Mobile**: Bottom nav becomes primary navigation, step indicator compresses
+- **Tablet**: Hybrid approach with all navigation methods visible
+
+## Keyboard Shortcuts
+
+No built-in keyboard shortcuts, but the wizard supports standard browser navigation:
+- Tab/Shift+Tab for focus navigation
+- Enter to activate buttons
+- Arrow keys within select dropdowns
+
+## Persistence
+
+The wizard state can be saved and restored (see [Client Management](/features/client-management) for details):
+
+- Draft quotes save automatically when "Guardar borrador" is clicked
+- State is exported via `exportQuoteSnapshot()` (app.js:1560-1614)
+- State is restored via `importQuoteSnapshot()` (app.js:1632-1709)
+- All selections, quantities, notes, and client data are preserved
+
+## Best Practices
+
+<Accordion title="For Users">
+  - Complete steps in order for the best experience
+  - Use the search and filters to quickly find equipment
+  - Add service notes with installation details (piping length, access issues)
+  - Verify pricing in the summary before generating PDF
+  - Save drafts frequently when working on complex quotations
+</Accordion>
+
+<Accordion title="For Developers">
+  - Always update button states after modifying selections
+  - Use `goToStep()` for navigation to ensure proper state updates
+  - Validate required fields before allowing progression
+  - Call `buildSummary()` when transitioning to step 5
+  - Implement `window.currentStep` updates for external integrations
+</Accordion>

@@ -1,0 +1,289 @@
+---
+title: 'Firebase Setup'
+description: 'Step-by-step guide to configure Firebase for CotizaClima'
+---
+
+## Overview
+
+CotizaClima uses Firebase Realtime Database for data storage and Firebase Authentication for user management. This guide walks you through setting up a Firebase project from scratch.
+
+## Prerequisites
+
+- A Google account
+- Basic understanding of Firebase console
+- Your application's domain (for authorized domains)
+
+## Step 1: Create Firebase Project
+
+<Steps>
+  <Step title="Go to Firebase Console">
+    Navigate to [Firebase Console](https://console.firebase.google.com/) and sign in with your Google account.
+  </Step>
+
+  <Step title="Create a new project">
+    Click **Add project** and enter a project name (e.g., "cotizaciones-app").
+    
+    <Note>
+      You can disable Google Analytics if you don't need it for this project.
+    </Note>
+  </Step>
+
+  <Step title="Get your project credentials">
+    Once created, go to **Project Settings** → **General** and note your:
+    - Project ID
+    - Web API Key
+  </Step>
+</Steps>
+
+## Step 2: Enable Realtime Database
+
+<Steps>
+  <Step title="Create database">
+    In the Firebase Console, navigate to **Build** → **Realtime Database**.
+    
+    Click **Create Database**.
+  </Step>
+
+  <Step title="Choose location">
+    Select the database location closest to your users (e.g., `us-central1`).
+  </Step>
+
+  <Step title="Set security rules">
+    Start in **locked mode** (we'll configure rules in the next section).
+  </Step>
+</Steps>
+
+### Database URL Format
+
+Your database URL will look like:
+
+```
+https://your-project-id-default-rtdb.firebaseio.com/
+```
+
+<Note>
+Save this URL - you'll need it for the `FIREBASE_CONNECTION` configuration.
+</Note>
+
+## Step 3: Configure Security Rules
+
+Set up proper security rules to protect your data while allowing authenticated access.
+
+<Accordion title="Recommended Security Rules">
+  ```json
+  {
+    "rules": {
+      "air_conditioners": {
+        ".read": "auth != null",
+        ".write": false
+      },
+      "accessories": {
+        ".read": "auth != null",
+        ".write": false
+      },
+      "quotes": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      },
+      "clients": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      },
+      "rankings": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    }
+  }
+  ```
+
+  ### Rule Breakdown
+
+  - **air_conditioners**: Read-only for authenticated users (product catalog)
+  - **accessories**: Read-only for authenticated users (accessories catalog)
+  - **quotes**: Users can only access their own quotes (`$uid` matches `auth.uid`)
+  - **clients**: Users can only access their own client records
+  - **rankings**: Users can only access their own ranking data
+</Accordion>
+
+<Warning>
+  Never set `.read` or `.write` to `true` globally. This exposes your entire database to the public.
+</Warning>
+
+## Step 4: Configure Application
+
+Update your Firebase configuration in the application code:
+
+### Database Connection (app.js)
+
+```javascript app.js
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://your-project-id-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: '' // Leave empty - auth handled by firebase-auth.js
+};
+```
+
+<CodeGroup>
+```javascript app.js (lines 64-68)
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: ''
+};
+```
+
+```javascript firebase-auth.js (lines 4-6)
+const FIREBASE_AUTH_CONFIG = {
+  apiKey: 'AIzaSyAIvIig9S0bQPYDf_eilrPB7lWbiWPy9EU'
+};
+```
+</CodeGroup>
+
+### Authentication Config (firebase-auth.js)
+
+```javascript firebase-auth.js
+const FIREBASE_AUTH_CONFIG = {
+  apiKey: 'YOUR_WEB_API_KEY_HERE'
+};
+```
+
+<Note>
+  Replace `YOUR_WEB_API_KEY_HERE` with the Web API Key from Firebase Console → Project Settings.
+</Note>
+
+## Step 5: Initialize Database Structure
+
+Create the initial database nodes by importing data:
+
+<Steps>
+  <Step title="Go to Realtime Database">
+    Open your database in the Firebase Console.
+  </Step>
+
+  <Step title="Import initial data">
+    Click the three dots (⋮) → **Import JSON**.
+    
+    Upload a JSON file with this structure:
+    ```json
+    {
+      "air_conditioners": [],
+      "accessories": [],
+      "quotes": {},
+      "clients": {},
+      "rankings": {}
+    }
+    ```
+  </Step>
+
+  <Step title="Verify structure">
+    Confirm all nodes appear in your database tree.
+  </Step>
+</Steps>
+
+<Warning>
+  Importing data will overwrite existing data. Only do this on a fresh database.
+</Warning>
+
+## Step 6: Enable Authentication
+
+Enable email/password authentication:
+
+<Steps>
+  <Step title="Navigate to Authentication">
+    Go to **Build** → **Authentication** in Firebase Console.
+  </Step>
+
+  <Step title="Get started">
+    Click **Get started** if this is your first time.
+  </Step>
+
+  <Step title="Enable Email/Password">
+    Under **Sign-in method**, find **Email/Password** and enable it.
+    
+    <Note>
+      You don't need to enable "Email link (passwordless sign-in)" for CotizaClima.
+    </Note>
+  </Step>
+
+  <Step title="Create first user">
+    Go to the **Users** tab and click **Add user**.
+    
+    Enter an email and password to create your admin account.
+  </Step>
+</Steps>
+
+## Verification
+
+Test your configuration:
+
+1. **Open the app** in your browser
+2. **Sign in** with the user you created
+3. **Check the Firebase status indicator** (should show green)
+4. **Verify data loads** from Firebase (not demo data)
+
+### Status Indicators
+
+The app shows a Firebase connection status dot:
+
+- 🟢 **Green**: Connected successfully
+- 🟡 **Yellow**: Connecting...
+- 🔴 **Red**: Error (using demo data)
+
+## Troubleshooting
+
+<Accordion title="Error: 'PERMISSION_DENIED'">
+  **Cause**: Security rules are blocking access.
+  
+  **Solution**:
+  1. Verify you're signed in
+  2. Check that security rules match the recommended structure
+  3. Ensure the user UID matches the path structure
+</Accordion>
+
+<Accordion title="Error: 'No hay databaseURL configurada'">
+  **Cause**: Missing or empty `databaseURL` in `FIREBASE_CONNECTION`.
+  
+  **Solution**:
+  1. Open `app.js`
+  2. Update `FIREBASE_CONNECTION.databaseURL` with your database URL
+  3. Refresh the page
+</Accordion>
+
+<Accordion title="Using demo data instead of Firebase">
+  **Cause**: Either:
+  - `databaseURL` is empty
+  - Connection failed
+  - Security rules deny access
+  
+  **Solution**:
+  1. Check browser console for error messages
+  2. Verify your database URL is correct
+  3. Test with Firebase Console → Realtime Database → Test Rules
+</Accordion>
+
+<Accordion title="Error: 'Configura FIREBASE_AUTH_CONFIG.apiKey'">
+  **Cause**: Missing API key in `firebase-auth.js`.
+  
+  **Solution**:
+  1. Go to Firebase Console → Project Settings → General
+  2. Copy your Web API Key
+  3. Update `FIREBASE_AUTH_CONFIG.apiKey` in `firebase-auth.js`
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/configuration/authentication">
+    Set up user authentication and session management
+  </Card>
+  <Card title="Database Structure" icon="database" href="/configuration/database-structure">
+    Learn about the database schema and data organization
+  </Card>
+</CardGroup>

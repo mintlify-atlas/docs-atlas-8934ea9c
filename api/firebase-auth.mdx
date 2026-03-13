@@ -1,0 +1,215 @@
+---
+title: 'FirebaseAuthService'
+description: 'Authentication service for user sign-in, sign-out, and token management'
+---
+
+# FirebaseAuthService
+
+The `FirebaseAuthService` manages Firebase authentication for CotizaClima, handling user sessions, token refresh, and authentication errors.
+
+## Overview
+
+This service provides methods for:
+- User authentication with email/password
+- Session management using `sessionStorage`
+- Automatic token refresh
+- User-friendly error messages in Spanish
+
+## Session Storage
+
+Sessions are stored in `sessionStorage` under the key `cotiz_auth_session_v1` with the following structure:
+
+```javascript
+{
+  idToken: string,
+  refreshToken: string,
+  uid: string,
+  email: string,
+  expiresAt: number // Unix timestamp (seconds)
+}
+```
+
+## Methods
+
+### signIn
+
+Authenticates a user with email and password.
+
+```javascript firebase-auth.js
+await FirebaseAuthService.signIn(email, password)
+```
+
+<ParamField path="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  User's password
+</ParamField>
+
+<ResponseField name="uid" type="string">
+  User's unique identifier
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+**Example:**
+
+```javascript
+try {
+  const user = await FirebaseAuthService.signIn('user@example.com', 'password123');
+  console.log('Signed in:', user.uid, user.email);
+} catch (error) {
+  const friendlyError = FirebaseAuthService.mapAuthError(error.message);
+  alert(friendlyError);
+}
+```
+
+---
+
+### signOut
+
+Clears the current user session.
+
+```javascript firebase-auth.js
+FirebaseAuthService.signOut()
+```
+
+No parameters. Clears the session from `sessionStorage`.
+
+**Example:**
+
+```javascript
+FirebaseAuthService.signOut();
+window.location.href = '/login.html';
+```
+
+---
+
+### getCurrentUser
+
+Retrieves the currently authenticated user from session storage.
+
+```javascript firebase-auth.js
+const user = FirebaseAuthService.getCurrentUser()
+```
+
+<ResponseField name="uid" type="string">
+  User's unique identifier
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="return" type="object | null">
+  Returns user object if authenticated, `null` otherwise
+</ResponseField>
+
+**Example:**
+
+```javascript
+const user = FirebaseAuthService.getCurrentUser();
+if (!user) {
+  window.location.href = '/login.html';
+} else {
+  console.log('Current user:', user.email);
+}
+```
+
+---
+
+### getValidIdToken
+
+Retrieves a valid ID token, automatically refreshing if expired.
+
+```javascript firebase-auth.js
+const token = await FirebaseAuthService.getValidIdToken()
+```
+
+<ResponseField name="return" type="string | null">
+  Valid ID token if session exists and is refreshable, `null` otherwise
+</ResponseField>
+
+<Note>
+  This method automatically refreshes the token if it's expired (based on `expiresAt` timestamp). Tokens are refreshed 30 seconds before actual expiration.
+</Note>
+
+**Example:**
+
+```javascript
+const idToken = await FirebaseAuthService.getValidIdToken();
+if (!idToken) {
+  alert('Sesión expirada. Por favor, inicia sesión nuevamente.');
+  window.location.href = '/login.html';
+  return;
+}
+
+// Use token for authenticated requests
+const quotes = await QuotesRepo.listQuotes(user.uid, idToken);
+```
+
+---
+
+### mapAuthError
+
+Maps Firebase error codes to user-friendly Spanish messages.
+
+```javascript firebase-auth.js
+const friendlyMessage = FirebaseAuthService.mapAuthError(errorMessage)
+```
+
+<ParamField path="message" type="string" required>
+  Firebase error message or code
+</ParamField>
+
+<ResponseField name="return" type="string">
+  User-friendly error message in Spanish
+</ResponseField>
+
+**Error Mappings:**
+
+| Firebase Error | Spanish Message |
+|---|---|
+| `EMAIL_NOT_FOUND` | Usuario no encontrado. |
+| `INVALID_PASSWORD` | Contraseña incorrecta. |
+| `USER_DISABLED` | Usuario deshabilitado. |
+| `INVALID_EMAIL` | Correo inválido. |
+| `TOO_MANY_ATTEMPTS_TRY_LATER` | Demasiados intentos. Intenta más tarde. |
+| _other_ | Returns original message |
+
+**Example:**
+
+```javascript
+try {
+  await FirebaseAuthService.signIn(email, password);
+} catch (error) {
+  const friendlyError = FirebaseAuthService.mapAuthError(error.message);
+  document.getElementById('error-message').textContent = friendlyError;
+}
+```
+
+---
+
+## Configuration
+
+The service uses `FIREBASE_AUTH_CONFIG` defined in `firebase-auth.js:4-6`:
+
+```javascript
+const FIREBASE_AUTH_CONFIG = {
+  apiKey: 'AIzaSyAIvIig9S0bQPYDf_eilrPB7lWbiWPy9EU'
+};
+```
+
+<Note>
+  The API key should be configured before deploying to production.
+</Note>
+
+## Implementation Details
+
+- **Token Expiration**: Tokens are refreshed automatically 30 seconds before expiration
+- **Session Storage**: Uses `sessionStorage` (cleared on tab/window close)
+- **JWT Parsing**: Extracts user info from ID token payload (firebase-auth.js:25-33)
+- **Error Handling**: All network errors are caught and can be mapped to Spanish messages

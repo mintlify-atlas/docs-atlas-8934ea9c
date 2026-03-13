@@ -1,0 +1,457 @@
+---
+title: 'Authentication'
+description: 'Email/password authentication and session management in CotizaClima'
+---
+
+## Overview
+
+CotizaClima uses Firebase Authentication REST API for secure user authentication. The implementation is lightweight, vanilla JavaScript with no Firebase SDK dependency.
+
+## Architecture
+
+Authentication is handled by the `FirebaseAuthService` module in `firebase-auth.js`. It provides:
+
+- Email/password sign-in
+- Automatic token refresh
+- Session persistence
+- User state management
+
+## Configuration
+
+### API Key Setup
+
+The authentication system requires a Firebase Web API Key:
+
+```javascript firebase-auth.js
+const FIREBASE_AUTH_CONFIG = {
+  apiKey: 'AIzaSyAIvIig9S0bQPYDf_eilrPB7lWbiWPy9EU'
+};
+```
+
+<Warning>
+  Never commit API keys to public repositories. Use environment variables or secure configuration management in production.
+</Warning>
+
+### How to Get Your API Key
+
+<Steps>
+  <Step title="Open Firebase Console">
+    Navigate to your project in [Firebase Console](https://console.firebase.google.com/)
+  </Step>
+  
+  <Step title="Go to Project Settings">
+    Click the gear icon → **Project Settings**
+  </Step>
+  
+  <Step title="Copy Web API Key">
+    Under the **General** tab, find **Web API Key** and copy it
+  </Step>
+  
+  <Step title="Update configuration">
+    Replace the `apiKey` value in `firebase-auth.js:5`
+  </Step>
+</Steps>
+
+## Session Management
+
+### Storage Strategy
+
+User sessions are stored in `sessionStorage` (not `localStorage`) for security:
+
+```javascript firebase-auth.js:2
+const AUTH_STORAGE_KEY = 'cotiz_auth_session_v1';
+```
+
+**Why sessionStorage?**
+- Clears automatically when browser tab closes
+- Isolated per-tab (better security)
+- Reduces risk of session hijacking
+
+### Session Structure
+
+The session object contains:
+
+```javascript
+{
+  idToken: 'eyJhbGciOiJSUzI1NiIs...', // JWT token for API requests
+  refreshToken: 'AMf-vBy...', // Used to get new idToken
+  uid: 'Abc123xyz...', // User unique ID
+  email: 'user@example.com', // User email
+  expiresAt: 1678901234 // Unix timestamp (token expiry - 30s)
+}
+```
+
+### Session Operations
+
+<CodeGroup>
+```javascript Read Session
+function readSession() {
+  try {
+    const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+```
+
+```javascript Write Session
+function writeSession(session) {
+  sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+}
+```
+
+```javascript Clear Session
+function clearSession() {
+  sessionStorage.removeItem(AUTH_STORAGE_KEY);
+}
+```
+</CodeGroup>
+
+## Authentication Flow
+
+### Sign In Process
+
+<Steps>
+  <Step title="User submits credentials">
+    Email and password are sent to Firebase Auth REST API
+    
+    ```javascript firebase-auth.js:96-101
+    const data = await authRequest('accounts:signInWithPassword', {
+      email,
+      password,
+      returnSecureToken: true
+    });
+    ```
+  </Step>
+  
+  <Step title="Firebase validates and returns tokens">
+    Response includes:
+    - `idToken`: JWT for authenticated requests
+    - `refreshToken`: For getting new idToken
+    - `localId`: User ID
+    - `expiresIn`: Token validity (usually 3600s)
+  </Step>
+  
+  <Step title="Parse and store session">
+    ```javascript firebase-auth.js:103-113
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expiresIn = Number(data.expiresIn || 3600);
+    const jwt = parseJwt(data.idToken) || {};
+
+    const session = {
+      idToken: data.idToken,
+      refreshToken: data.refreshToken,
+      uid: data.localId || jwt.user_id || '',
+      email: data.email || jwt.email || email,
+      expiresAt: nowSec + expiresIn - 30
+    };
+
+    writeSession(session);
+    return { uid: session.uid, email: session.email };
+    ```
+  </Step>
+</Steps>
+
+### Token Refresh
+
+Tokens expire after ~1 hour. The system automatically refreshes them:
+
+```javascript firebase-auth.js:129-149
+async function getValidIdToken() {
+  const session = readSession();
+  if (!session || !session.idToken) return null;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (session.expiresAt && session.expiresAt > nowSec) {
+    return session.idToken; // Still valid
+  }
+
+  if (!session.refreshToken) {
+    clearSession();
+    return null;
+  }
+
+  try {
+    return await refreshIdToken(session.refreshToken);
+  } catch (e) {
+    clearSession();
+    return null;
+  }
+}
+```
+
+<Note>
+  The `expiresAt` is set to **actual expiry - 30 seconds** to ensure tokens are refreshed before they expire.
+</Note>
+
+### Refresh Token Flow
+
+<Steps>
+  <Step title="Detect token expiry">
+    Check if `session.expiresAt` < current time
+  </Step>
+  
+  <Step title="Request new token">
+    ```javascript firebase-auth.js:61-73
+    const endpoint = `https://securetoken.googleapis.com/v1/token?key=${apiKey}`;
+    const form = new URLSearchParams();
+    form.set('grant_type', 'refresh_token');
+    form.set('refresh_token', refreshToken);
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString()
+    });
+    ```
+  </Step>
+  
+  <Step title="Update session">
+    Replace old `idToken` and `refreshToken` with new ones:
+    
+    ```javascript firebase-auth.js:84-94
+    const session = {
+      idToken: data.id_token,
+      refreshToken: data.refresh_token,
+      uid: data.user_id || jwt.user_id || '',
+      email: jwt.email || '',
+      expiresAt: nowSec + expiresIn - 30
+    };
+
+    writeSession(session);
+    return session.idToken;
+    ```
+  </Step>
+</Steps>
+
+## API Reference
+
+The `FirebaseAuthService` exposes these methods globally:
+
+### signIn(email, password)
+
+Authenticates a user with email and password.
+
+```javascript
+const user = await window.FirebaseAuthService.signIn('user@example.com', 'password123');
+// Returns: { uid: 'abc123...', email: 'user@example.com' }
+```
+
+**Parameters:**
+- `email` (string): User's email address
+- `password` (string): User's password
+
+**Returns:** `Promise<{uid: string, email: string}>`
+
+**Throws:** Error with Firebase error message
+
+### signOut()
+
+Clears the current session.
+
+```javascript
+window.FirebaseAuthService.signOut();
+// Session cleared, user must sign in again
+```
+
+### getCurrentUser()
+
+Returns the currently authenticated user (synchronous).
+
+```javascript
+const user = window.FirebaseAuthService.getCurrentUser();
+// Returns: { uid: 'abc123...', email: 'user@example.com' } or null
+```
+
+**Returns:** `{uid: string, email: string} | null`
+
+### getValidIdToken()
+
+Returns a valid ID token, refreshing if necessary (async).
+
+```javascript
+const idToken = await window.FirebaseAuthService.getValidIdToken();
+// Use this token for authenticated Firebase requests
+```
+
+**Returns:** `Promise<string | null>`
+
+**Usage Example:**
+```javascript
+const user = window.FirebaseAuthService.getCurrentUser();
+if (user) {
+  const idToken = await window.FirebaseAuthService.getValidIdToken();
+  // Make authenticated request with idToken
+}
+```
+
+### mapAuthError(message)
+
+Translates Firebase error codes to user-friendly Spanish messages.
+
+```javascript
+try {
+  await window.FirebaseAuthService.signIn(email, password);
+} catch (error) {
+  const friendlyMessage = window.FirebaseAuthService.mapAuthError(error.message);
+  alert(friendlyMessage); // "Contraseña incorrecta."
+}
+```
+
+**Error Mapping:**
+
+| Firebase Error | Spanish Message |
+|----------------|----------------|
+| `EMAIL_NOT_FOUND` | Usuario no encontrado. |
+| `INVALID_PASSWORD` | Contraseña incorrecta. |
+| `USER_DISABLED` | Usuario deshabilitado. |
+| `INVALID_EMAIL` | Correo inválido. |
+| `TOO_MANY_ATTEMPTS_TRY_LATER` | Demasiados intentos. Intenta más tarde. |
+
+See implementation in `firebase-auth.js:151-160`
+
+## Security Best Practices
+
+<Warning>
+  **Critical Security Measures**
+</Warning>
+
+### 1. Never Expose Refresh Tokens
+
+```javascript
+// ❌ BAD - Don't log or expose tokens
+console.log(session.refreshToken);
+
+// ✅ GOOD - Keep tokens in memory/storage only
+const idToken = await getValidIdToken();
+```
+
+### 2. Validate Token Before Requests
+
+Always get a fresh token before making Firebase requests:
+
+```javascript
+// ✅ Always use getValidIdToken()
+const idToken = await window.FirebaseAuthService.getValidIdToken();
+if (!idToken) {
+  // User not authenticated - redirect to login
+  return;
+}
+
+// Make authenticated request
+const quotes = await window.QuotesRepo.listQuotes(uid, idToken);
+```
+
+### 3. Handle Token Expiry Gracefully
+
+If token refresh fails, clear session and prompt re-authentication:
+
+```javascript firebase-auth.js:143-148
+try {
+  return await refreshIdToken(session.refreshToken);
+} catch (e) {
+  clearSession(); // Clear invalid session
+  return null;
+}
+```
+
+### 4. Use HTTPS Only
+
+<Warning>
+  Never deploy to production without HTTPS. Tokens transmitted over HTTP can be intercepted.
+</Warning>
+
+## Integration Example
+
+Here's how authentication integrates with data operations:
+
+```javascript
+// 1. Check authentication
+const user = window.FirebaseAuthService.getCurrentUser();
+if (!user) {
+  window.location.href = '/login.html';
+  return;
+}
+
+// 2. Get valid token
+const idToken = await window.FirebaseAuthService.getValidIdToken();
+if (!idToken) {
+  alert('Sesión expirada. Inicia sesión nuevamente.');
+  window.location.href = '/login.html';
+  return;
+}
+
+// 3. Make authenticated requests
+try {
+  const quotes = await window.QuotesRepo.listQuotes(user.uid, idToken);
+  const clients = await window.ClientRepo.listClients(user.uid, idToken);
+  
+  // Process data...
+} catch (error) {
+  if (error.message.includes('PERMISSION_DENIED')) {
+    alert('No tienes permisos para acceder a estos datos.');
+  }
+}
+```
+
+## Debugging Authentication
+
+### Check Current Session
+
+```javascript
+// Open browser console and run:
+const session = sessionStorage.getItem('cotiz_auth_session_v1');
+console.log(JSON.parse(session));
+```
+
+### Test Token Validity
+
+```javascript
+// In browser console:
+const token = await window.FirebaseAuthService.getValidIdToken();
+console.log('Token valid:', !!token);
+```
+
+### Common Issues
+
+<Accordion title="Error: 'Configura FIREBASE_AUTH_CONFIG.apiKey'">
+  **Cause**: Missing or empty `apiKey` in `firebase-auth.js:5`
+  
+  **Solution**: Add your Firebase Web API Key to the configuration.
+</Accordion>
+
+<Accordion title="Session lost on page refresh">
+  **Cause**: Using `localStorage` instead of `sessionStorage`, or browser cleared storage.
+  
+  **Solution**: This is expected behavior with `sessionStorage`. Users must sign in each browser session.
+</Accordion>
+
+<Accordion title="Error: 'INVALID_PASSWORD' or 'EMAIL_NOT_FOUND'">
+  **Cause**: Incorrect credentials.
+  
+  **Solution**: 
+  1. Verify user exists in Firebase Console → Authentication → Users
+  2. Reset password if needed
+  3. Check for typos in email/password
+</Accordion>
+
+<Accordion title="Token refresh fails repeatedly">
+  **Cause**: Invalid or expired refresh token.
+  
+  **Solution**:
+  1. Clear session storage
+  2. Sign out and sign in again
+  3. Check Firebase Console for account status
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Structure" icon="database" href="/configuration/database-structure">
+    Understand the Realtime Database schema
+  </Card>
+  <Card title="Database Structure" icon="code" href="/configuration/database-structure">
+    Learn about data organization and operations
+  </Card>
+</CardGroup>

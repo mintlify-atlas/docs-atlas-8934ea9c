@@ -1,0 +1,320 @@
+---
+title: 'RankingRepo'
+description: 'Repository for tracking and retrieving air conditioner model popularity rankings'
+---
+
+# RankingRepo
+
+The `RankingRepo` tracks how frequently each air conditioner model is quoted, providing popularity rankings for equipment selection.
+
+## Overview
+
+Rankings are stored under the path `rankings/{uid}/{modelKey}` where `modelKey` is a normalized version of the `brandModel` string.
+
+```javascript
+{
+  marca: string,
+  brandModel: string,
+  count: number,         // Number of times quoted
+  updatedAt: number      // Server timestamp
+}
+```
+
+## Database Configuration
+
+Uses `FIREBASE_CONNECTION.databaseURL` or defaults to:
+
+```javascript
+const DEFAULT_DB_URL = 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/';
+```
+
+## Methods
+
+### modelKey (internal helper)
+
+Normalizes a brand/model name to a Firebase-safe key.
+
+```javascript ranking-repo.js
+const key = modelKey(brandModel)
+```
+
+<ParamField path="brandModel" type="string" required>
+  Brand and model name (e.g., "Samsung WindFree 9K")
+</ParamField>
+
+<ResponseField name="return" type="string">
+  Normalized key suitable for Firebase paths (e.g., "samsung_windfree_9k")
+</ResponseField>
+
+**Transformation:**
+1. Convert to lowercase
+2. Replace non-alphanumeric characters with underscores
+3. Remove leading/trailing underscores
+
+**Examples:**
+
+```javascript
+modelKey('Samsung WindFree 9K')     // → 'samsung_windfree_9k'
+modelKey('LG Dual Inverter 12000')  // → 'lg_dual_inverter_12000'
+modelKey('Midea U-Cool 18K BTU')    // → 'midea_u_cool_18k_btu'
+modelKey('Carrier 24.000 BTU')      // → 'carrier_24_000_btu'
+```
+
+**Implementation Details:**
+
+From ranking-repo.js:34-39:
+- Uses regex `/[^a-z0-9]+/g` to replace non-alphanumeric with `_`
+- Trims leading/trailing underscores with `/^_+|_+$/g`
+- Returns empty string for null/undefined input
+
+---
+
+### incrementAcRankings
+
+Increment quote count for each unique model in equipment selections.
+
+```javascript ranking-repo.js
+await RankingRepo.incrementAcRankings(uid, idToken, equipmentSelections)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="equipmentSelections" type="array" required>
+  Array of equipment objects, each with `marca` and `brandModel` fields
+</ParamField>
+
+**Behavior:**
+
+- **Deduplicates** by `brandModel` — multiple BTU sizes of same model count as one
+- **Atomic increment** using Firebase server value `{".sv": {"increment": 1}}`
+- **Fire-and-forget** — silently returns on invalid input
+- **Updates timestamp** using Firebase server timestamp
+
+**Example:**
+
+```javascript
+const selections = [
+  { marca: 'Samsung', brandModel: 'Samsung WindFree 9K', btu: 9000 },
+  { marca: 'Samsung', brandModel: 'Samsung WindFree 9K', btu: 12000 },
+  { marca: 'LG', brandModel: 'LG Dual Inverter 18K', btu: 18000 }
+];
+
+// Only increments 2 models (Samsung WindFree counted once despite 2 BTU sizes)
+await RankingRepo.incrementAcRankings(user.uid, idToken, selections);
+```
+
+**Implementation Details:**
+
+From ranking-repo.js:46-72:
+1. Returns early if invalid input (no uid, token, or empty array)
+2. Deduplicates by `modelKey(item.brandModel)` using a `Set`
+3. For each unique model, sends `PATCH` request with:
+   ```javascript
+   {
+     marca: item.marca || '',
+     brandModel: item.brandModel || '',
+     count: { '.sv': { increment: 1 } },
+     updatedAt: { '.sv': 'timestamp' }
+   }
+   ```
+4. Uses `Promise.all()` to send all increments in parallel
+5. Silently returns (no error throwing)
+
+<Note>
+  This method uses Firebase's atomic increment to safely handle concurrent quote creation without race conditions.
+</Note>
+
+**Deduplication Example:**
+
+```javascript
+// Quote has same model in different BTU sizes
+const selections = [
+  { brandModel: 'Carrier 12K Split', btu: 12000 },
+  { brandModel: 'Carrier 12K Split', btu: 18000 },
+  { brandModel: 'Carrier 12K Split', btu: 24000 }
+];
+
+// Only increments count by 1 (not 3)
+await RankingRepo.incrementAcRankings(uid, token, selections);
+```
+
+---
+
+### getRankings
+
+Retrieves all ranking counts for a user.
+
+```javascript ranking-repo.js
+const rankings = await RankingRepo.getRankings(uid, idToken)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ResponseField name="return" type="object">
+  Object mapping `modelKey` to `count` number. Returns empty object `{}` if no rankings exist.
+</ResponseField>
+
+**Example:**
+
+```javascript
+const user = FirebaseAuthService.getCurrentUser();
+const idToken = await FirebaseAuthService.getValidIdToken();
+
+const rankings = await RankingRepo.getRankings(user.uid, idToken);
+
+// rankings = {
+//   'samsung_windfree_9k': 15,
+//   'lg_dual_inverter_18k': 8,
+//   'carrier_12k_split': 5
+// }
+
+// Sort by popularity
+const sorted = Object.entries(rankings)
+  .sort((a, b) => b[1] - a[1]);
+
+console.log('Top 3 models:');
+sorted.slice(0, 3).forEach(([model, count]) => {
+  console.log(`${model}: ${count} quotes`);
+});
+```
+
+**Implementation Details:**
+
+From ranking-repo.js:78-88:
+1. Fetches `rankings/{uid}` as object
+2. Returns empty object `{}` if null or not an object
+3. Maps each entry to `{modelKey: count}`
+4. Defaults count to `0` if not a number
+5. Returns plain object (not sorted)
+
+**Response Structure:**
+
+Raw Firebase data:
+```json
+{
+  "samsung_windfree_9k": {
+    "marca": "Samsung",
+    "brandModel": "Samsung WindFree 9K",
+    "count": 15,
+    "updatedAt": 1234567890000
+  },
+  "lg_dual_inverter_18k": {
+    "marca": "LG",
+    "brandModel": "LG Dual Inverter 18K",
+    "count": 8,
+    "updatedAt": 1234567890000
+  }
+}
+```
+
+Returned by `getRankings()`:
+```javascript
+{
+  'samsung_windfree_9k': 15,
+  'lg_dual_inverter_18k': 8
+}
+```
+
+---
+
+## Use Cases
+
+### Track Popular Models
+
+```javascript
+// When saving a quote, increment rankings
+await QuotesRepo.saveQuote(uid, token, quoteData);
+await RankingRepo.incrementAcRankings(uid, token, quoteData.equipmentSelections);
+```
+
+### Show Top Models
+
+```javascript
+const rankings = await RankingRepo.getRankings(user.uid, idToken);
+
+// Get top 5
+const top5 = Object.entries(rankings)
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 5);
+
+top5.forEach(([modelKey, count]) => {
+  console.log(`${modelKey}: ${count} veces`);
+});
+```
+
+### Pre-populate Equipment Selection
+
+```javascript
+const rankings = await RankingRepo.getRankings(user.uid, idToken);
+const mostQuoted = Object.entries(rankings)
+  .sort((a, b) => b[1] - a[1])[0];
+
+if (mostQuoted) {
+  const [modelKey, count] = mostQuoted;
+  console.log(`Modelo más cotizado: ${modelKey} (${count} veces)`);
+  // Pre-select in UI
+}
+```
+
+## Atomic Increments
+
+The ranking system uses Firebase's server-side increment to safely handle concurrent operations:
+
+```javascript
+// Instead of GET → increment → PUT
+// Uses atomic server value:
+{
+  count: { '.sv': { increment: 1 } }
+}
+```
+
+**Benefits:**
+- No race conditions when multiple users quote same model simultaneously
+- No need to read current value before incrementing
+- Automatic retry on network issues
+
+## Path Structure
+
+Rankings are stored at:
+
+```
+rankings/
+  {uid}/
+    samsung_windfree_9k/
+      marca: "Samsung"
+      brandModel: "Samsung WindFree 9K"
+      count: 15
+      updatedAt: 1234567890000
+    lg_dual_inverter_18k/
+      marca: "LG"
+      brandModel: "LG Dual Inverter 18K"
+      count: 8
+      updatedAt: 1234567890000
+```
+
+## Error Handling
+
+- `incrementAcRankings`: Silently returns on error (fire-and-forget)
+- `getRankings`: Throws error on failure
+
+```javascript
+try {
+  const rankings = await RankingRepo.getRankings(uid, token);
+} catch (error) {
+  console.error('Failed to load rankings:', error.message);
+  // Fallback to empty rankings
+  const rankings = {};
+}
+```

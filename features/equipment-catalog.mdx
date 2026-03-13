@@ -1,0 +1,543 @@
+---
+title: Equipment Catalog
+description: Dynamic air conditioning equipment database with advanced filtering and popularity tracking
+---
+
+The equipment catalog is the foundation of CotizaClima's quotation system, providing a comprehensive database of air conditioning units with real-time filtering, search, and popularity ranking features.
+
+## Data Sources
+
+The catalog supports dual data sources with automatic fallback:
+
+### Firebase Realtime Database (Primary)
+
+Equipment data is loaded from Firebase when configured (app.js:160-181):
+
+```javascript
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: ''
+};
+
+async function loadFromFirebase(url, node, authToken = '') {
+  const endpoint = buildFirebaseEndpoint(cleanUrl, node, authToken);
+  const res = await fetch(endpoint);
+  const raw = await res.json();
+  const data = normalizeFirebaseArrays(raw);
+  
+  allAC = data;
+  filteredAC = [...allAC];
+  renderBrandFilterOptions();
+  renderACGrid();
+}
+```
+
+<Note>
+  Firebase rules must allow public read access to the configured node. If the connection fails, the app automatically falls back to demo data.
+</Note>
+
+### Demo Data (Fallback)
+
+When Firebase is unavailable, the system uses hardcoded demo data (app.js:463-469):
+
+```javascript
+function loadDemoData() {
+  allAC = DEMO_DATA;
+  filteredAC = [...allAC];
+  renderBrandFilterOptions();
+  renderACGrid();
+  updateStep1NextButton();
+}
+```
+
+## Equipment Data Structure
+
+Each equipment entry follows this schema:
+
+```javascript
+{
+  marca: "LG",                    // Brand name (used for filtering)
+  brand_model: "LG DUAL Cool",    // Display name
+  type: "Split Muro",             // Equipment type
+  refrigerant: "R32",             // Refrigerant type (R32 or R410)
+  wifi: "Yes",                    // WiFi support: "Yes", "Optional", or other
+  warranty: "3 years",            // Warranty period
+  installation_kit: "básico",     // Kit type (básico, completo, etc.)
+  capacities: [
+    {
+      btu_capacity: 9000,         // BTU rating
+      net_price: 180000,          // Price without IVA
+      price_with_tax: 214200      // Price including IVA
+    },
+    {
+      btu_capacity: 12000,
+      net_price: 220000,
+      price_with_tax: 261800
+    }
+  ]
+}
+```
+
+### Required Fields
+
+- `marca`: Used for brand filtering
+- `brand_model`: Primary display name
+- `type`: Equipment classification
+- `refrigerant`: Filter criterion
+- `capacities`: Array with at least one BTU/price combination
+
+### Optional Fields
+
+- `wifi`: Displays WiFi badge if present
+- `warranty`: Shows warranty shield icon
+- `installation_kit`: Displays kit badge
+
+## Search & Filtering
+
+The catalog implements real-time client-side filtering with multiple criteria:
+
+### Text Search
+
+Searches across brand and model names (app.js:664-694):
+
+```javascript
+function filterAC() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  
+  filteredAC = allAC.filter(ac => {
+    const brandName = (ac.marca || '').toLowerCase();
+    const modelName = (ac.brand_model || '').toLowerCase();
+    if (search && !brandName.includes(search) && !modelName.includes(search)) {
+      return false;
+    }
+    return true;
+  });
+  
+  renderACGrid();
+}
+```
+
+Implementation details:
+- Case-insensitive substring matching
+- Matches against both `marca` and `brand_model` fields
+- Triggered on every keystroke (`oninput` event)
+- No debouncing (performs well with typical catalog sizes)
+
+### Brand Filter
+
+Dropdown populated dynamically from catalog (app.js:471-488):
+
+```javascript
+function renderBrandFilterOptions() {
+  const brands = [...new Set(
+    allAC
+      .map(ac => (ac.marca || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'es'));
+  
+  brandSelect.innerHTML = '<option value="">Todas las marcas</option>' +
+    brands.map(brand => `<option value="${brand}">${brand}</option>`).join('');
+}
+```
+
+<Note>
+  Brand list updates automatically when Firebase data loads, preserving the user's current selection if still valid.
+</Note>
+
+### BTU Capacity Filter
+
+Predefined BTU options (index.html:84-93):
+
+```html
+<select class="filter-select" id="filterBTU" onchange="filterAC()">
+  <option value="">Todos los BTU</option>
+  <option value="9000">9.000 BTU</option>
+  <option value="12000">12.000 BTU</option>
+  <option value="14000">14.000 BTU</option>
+  <option value="18000">18.000 BTU</option>
+  <option value="22000">22.000 BTU</option>
+  <option value="24000">24.000 BTU</option>
+  <option value="36000">36.000 BTU</option>
+</select>
+```
+
+Filtering logic:
+
+```javascript
+if (btu && !ac.capacities.find(c => c.btu_capacity === btu)) {
+  return false;
+}
+```
+
+### Refrigerant Type Filter
+
+Two options available (index.html:94-98):
+
+```html
+<select class="filter-select" id="filterRef" onchange="filterAC()">
+  <option value="">Todo refrigerante</option>
+  <option value="R32">R32</option>
+  <option value="R410">R410</option>
+</select>
+```
+
+### Combined Filtering
+
+All filters work together with AND logic:
+
+```javascript
+filteredAC = allAC.filter(ac => {
+  // Text search
+  if (search && !brandName.includes(search) && !modelName.includes(search)) return false;
+  
+  // Brand filter
+  if (brand && (ac.marca || '') !== brand) return false;
+  
+  // Refrigerant filter
+  if (ref && ac.refrigerant !== ref) return false;
+  
+  // BTU filter
+  if (btu && !ac.capacities.find(c => c.btu_capacity === btu)) return false;
+  
+  return true;
+});
+```
+
+## Popularity Ranking
+
+The "Más cotizados" feature tracks which equipment models are quoted most frequently.
+
+### Ranking Data Structure
+
+Stored in Firebase per user (ranking-repo.js):
+
+```javascript
+// rankings/{uid}/{modelKey} = count
+{
+  "lg-dual-cool-9000": 15,
+  "midea-inverter-12000": 8,
+  "daitsu-asd-18000": 5
+}
+```
+
+### Model Key Generation
+
+Equipment models are normalized for deduplication:
+
+```javascript
+function modelKey(brandModel) {
+  return (brandModel || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')  // Remove diacritics
+    .replace(/[^a-z0-9]+/g, '-')      // Replace non-alphanumeric
+    .replace(/^-+|-+$/g, '');         // Trim hyphens
+}
+```
+
+### Ranking Display
+
+Popularity badges appear on equipment cards (app.js:568-571):
+
+```javascript
+const rankCount = window.RankingRepo 
+  ? (acRankings[window.RankingRepo.modelKey(ac.brand_model)] || 0) 
+  : 0;
+const rankBadge = (sortRankingMode !== 2 && rankCount > 0)
+  ? `<span class="ranking-badge"><i class="fas fa-fire"></i> ${rankCount}</span>`
+  : '';
+```
+
+### Sort Modes
+
+Toggle button cycles through three modes (app.js:199-220):
+
+<Tabs>
+  <Tab title="Más cotizados (desc)">
+    Shows most popular equipment first
+    
+    ```javascript
+    filteredAC.sort((a, b) => {
+      const aCount = acRankings[modelKey(a.brand_model)] || 0;
+      const bCount = acRankings[modelKey(b.brand_model)] || 0;
+      return bCount - aCount;  // Descending
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Menos cotizados (asc)">
+    Shows least popular equipment first (useful for promoting new products)
+    
+    ```javascript
+    return aCount - bCount;  // Ascending
+    ```
+  </Tab>
+  
+  <Tab title="Orden original">
+    Returns to default catalog order (no sorting applied)
+  </Tab>
+</Tabs>
+
+<Note>
+  Rankings are user-specific and only load when authenticated. The feature degrades gracefully for anonymous users.
+</Note>
+
+### Ranking Updates
+
+Rankings increment when quotations are saved:
+
+```javascript
+async function trackModelSelectionInRanking(equipmentSelections) {
+  if (!window.RankingRepo) return;
+  
+  const models = equipmentSelections.map(item => item.brandModel);
+  await Promise.all(
+    models.map(model => window.RankingRepo.incrementModelCount(uid, idToken, model))
+  );
+}
+```
+
+## Equipment Cards
+
+Each card in the grid displays comprehensive equipment information:
+
+### Card Layout
+
+Rendered dynamically (app.js:572-603):
+
+```javascript
+return `
+<div class="ac-card ${isSelected ? 'selected' : ''}" id="accard-${origIdx}">
+  <div class="ac-header">
+    <div>
+      <div class="ac-brand-row">${brandLogo}</div>
+      <div class="ac-brand">${displayName}</div>
+      <div class="ac-type">${ac.type}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+      <span class="ac-badge ${refBadge}">${ac.refrigerant}</span>
+      ${rankBadge}
+    </div>
+  </div>
+  <div class="btu-label">Capacidad BTU</div>
+  <div class="btu-options">
+    ${ac.capacities.map(c => `
+      <button class="btu-btn ${selected ? 'selected' : ''}" 
+        onclick="selectAC(${origIdx}, ${c.btu_capacity})">
+        ${(c.btu_capacity/1000).toFixed(0)}K
+      </button>
+    `).join('')}
+  </div>
+  <div class="ac-specs" aria-label="Especificaciones">
+    <span class="spec-tag icon-only wifi" title="${wifiLabel}"><i class="fas fa-wifi"></i></span>
+    <span class="spec-tag icon-only warranty" title="${warYears}"><i class="fas fa-shield-halved"></i></span>
+    <span class="spec-tag icon-only" title="${kitLabel}"><i class="fas fa-box"></i></span>
+  </div>
+  ${isSelected ? renderACPrice(origIdx) : ''}
+</div>`;
+```
+
+### Brand Logos
+
+Automatically loaded from `assets/img/` directory (app.js:489-540):
+
+```javascript
+function getBrandIconCandidates(brand) {
+  const normalized = normalizeBrandKey(brand);  // "LG" → "lg"
+  const baseNames = BRAND_ICON_OVERRIDES[normalized] || [normalized];
+  const files = [];
+  
+  baseNames.forEach(base => {
+    BRAND_ICON_EXTENSIONS.forEach(ext => {
+      files.push(`${BRAND_ICON_DIR}/${base}.${ext}`);
+    });
+  });
+  
+  return [...new Set(files)];
+}
+```
+
+Supported formats: SVG, PNG, WebP, JPG, JPEG
+
+Fallback mechanism:
+```javascript
+function handleBrandIconError(img) {
+  const candidates = img.dataset.candidates.split('|');
+  const nextIndex = currentIndex + 1;
+  
+  if (nextIndex >= candidates.length) {
+    img.style.display = 'none';  // Hide if no valid image found
+    return;
+  }
+  
+  img.src = candidates[nextIndex];
+}
+```
+
+### BTU Selection
+
+Multiple BTU options per equipment:
+
+```javascript
+function selectAC(idx, btu) {
+  const key = equipKey(idx, Number(btu));  // "0__9000"
+  selectedEquipments[key] = (selectedEquipments[key] || 0) + 1;
+  
+  selectedAC = idx;
+  selectedBTU = btu;
+  updateStep1NextButton();
+  renderACGrid();
+  
+  showToast(`${allAC[idx].brand_model} · ${(btu/1000).toFixed(0)}K (x${selectedEquipments[key]})`, 'success');
+}
+```
+
+### Price Display
+
+Prices appear when equipment is selected (app.js:610-640):
+
+```javascript
+function renderACPrice(idx) {
+  const selectedItems = getSelectedItemsForEquipment(idx);
+  
+  const detailRows = selectedItems.map(item => {
+    const subtotal = item.cap.price_with_tax * item.qty;
+    return `
+    <div>
+      <span>${(item.btu/1000).toFixed(0)}K x ${item.qty}</span>
+      <span>
+        <button onclick="changeEquipmentQty(${idx}, ${item.btu}, -1)">-</button>
+        <button onclick="changeEquipmentQty(${idx}, ${item.btu}, 1)">+</button>
+      </span>
+      <span>$${fmtNum(subtotal)}</span>
+    </div>`;
+  }).join('');
+  
+  const total = selectedItems.reduce((sum, item) => 
+    sum + item.cap.price_with_tax * item.qty, 0);
+  
+  return `
+  <div class="ac-price">
+    ${detailRows}
+    <div>
+      <div class="price-net">Total equipo</div>
+      <div class="price-iva">$${fmtNum(total)} <span>c/IVA</span></div>
+    </div>
+  </div>`;
+}
+```
+
+## Multi-Quantity Support
+
+Users can select multiple units of the same equipment:
+
+```javascript
+// Data structure: key → quantity
+selectedEquipments = {
+  "0__9000": 2,    // Equipment 0, 9000 BTU, qty: 2
+  "0__12000": 1,   // Equipment 0, 12000 BTU, qty: 1
+  "5__18000": 3    // Equipment 5, 18000 BTU, qty: 3
+};
+
+function changeEquipmentQty(idx, btu, delta) {
+  const key = equipKey(idx, Number(btu));
+  const nextQty = Math.max(0, (selectedEquipments[key] || 0) + delta);
+  
+  if (nextQty === 0) {
+    delete selectedEquipments[key];  // Remove if quantity reaches 0
+  } else {
+    selectedEquipments[key] = nextQty;
+  }
+  
+  updateStep1NextButton();
+  renderACGrid();
+}
+```
+
+## Results Counter
+
+Displays filtered count (app.js:554):
+
+```javascript
+if (count) {
+  count.innerHTML = `<span>${filteredAC.length}</span> equipo${filteredAC.length!==1?'s':''} encontrado${filteredAC.length!==1?'s':''}`;
+}
+```
+
+## Empty States
+
+Graceful handling when no results match filters:
+
+```javascript
+if (filteredAC.length === 0) {
+  grid.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon"><i class="fas fa-magnifying-glass"></i></div>
+      <p>No se encontraron equipos con esos filtros.</p>
+    </div>`;
+  return;
+}
+```
+
+## Performance Considerations
+
+<Accordion title="Rendering Optimization">
+  - Full grid re-render on every filter change (acceptable for typical catalog sizes under 500 items)
+  - No virtualization (all cards rendered in DOM)
+  - Brand logos use lazy loading (`loading="lazy"`)
+  - Firebase data normalizes arrays once at load time
+</Accordion>
+
+<Accordion title="Search Performance">
+  - Client-side filtering (no server round-trips)
+  - No debouncing on text input (instant feedback)
+  - Linear search O(n) across all equipment
+  - Multiple filters combine with early returns
+</Accordion>
+
+<Accordion title="Scaling Recommendations">
+  For catalogs >1000 items:
+  - Implement search debouncing (300ms)
+  - Add virtual scrolling for grid
+  - Consider server-side filtering
+  - Cache filtered results
+</Accordion>
+
+## Accessibility
+
+- All filters have proper `<label>` elements
+- Equipment cards use semantic HTML
+- Icons include `aria-label` for screen readers
+- Keyboard navigation works on all interactive elements
+- Focus styles clearly indicate active element
+
+## Firebase Data Management
+
+### Updating the Catalog
+
+To add/modify equipment in Firebase:
+
+1. Export current data: `GET /air_conditioners.json`
+2. Add/modify entries in JSON array
+3. Validate schema (required fields present)
+4. Re-import: `PUT /air_conditioners.json`
+
+<Note>
+  Changes take effect immediately. No cache invalidation needed since the app fetches on every page load.
+</Note>
+
+### Accessories Catalog
+
+Accessories load from separate node:
+
+```javascript
+async function loadAccessoriesFromFirebase(url, authToken = '') {
+  const endpoint = `${cleanUrl}/accessories.json`;
+  const res = await fetch(endpoint);
+  const data = normalizeFirebaseArrays(await res.json());
+  
+  ACCESSORIES = data;
+  renderAccGrid();
+}
+```

@@ -1,0 +1,107 @@
+---
+title: Introduction
+description: Welcome to CotizaClima, a complete air conditioning quotation system for managing equipment sales, services, and clients.
+---
+
+# Welcome to CotizaClima
+
+CotizaClima is a comprehensive web-based quotation system designed specifically for air conditioning businesses. Create professional PDF quotes, manage your client directory, and track your sales pipeline — all from a single, intuitive interface.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get up and running in 5 minutes
+  </Card>
+  <Card title="Core Features" icon="sparkles" href="/features/quotation-wizard">
+    Explore what CotizaClima can do
+  </Card>
+  <Card title="Firebase Setup" icon="fire" href="/configuration/firebase-setup">
+    Configure your database
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/firebase-auth">
+    Browse the API documentation
+  </Card>
+</CardGroup>
+
+## What is CotizaClima?
+
+CotizaClima streamlines the entire quotation workflow for HVAC businesses:
+
+- **Multi-step wizard** guides users through equipment selection, service options, and client details
+- **Equipment catalog** with advanced filtering by brand, BTU capacity, and refrigerant type
+- **Client management** with RUT-based deduplication and complete contact history
+- **Professional PDFs** generated on-demand with your branding and pricing
+- **Firebase integration** for authentication, real-time data sync, and persistence
+- **Mobile-first design** that works seamlessly on phones, tablets, and desktops
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card title="Quotation Wizard" icon="wand-magic-sparkles">
+    5-step flow from equipment selection to PDF generation
+  </Card>
+  <Card title="Equipment Catalog" icon="snowflake">
+    Search and filter 100+ AC units by brand, BTU, and refrigerant
+  </Card>
+  <Card title="Client Directory" icon="users">
+    Track clients with automatic deduplication by Chilean RUT
+  </Card>
+  <Card title="Service Selection" icon="wrench">
+    Installation, maintenance, repair, and custom services
+  </Card>
+  <Card title="PDF Generation" icon="file-pdf">
+    Professional quotes with your logo and pricing breakdown
+  </Card>
+  <Card title="Quote History" icon="clock-rotate-left">
+    Save drafts, resume editing, and track issued quotes
+  </Card>
+</CardGroup>
+
+## Built for Chilean Market
+
+CotizaClima is purpose-built for HVAC businesses operating in Chile:
+
+- **RUT validation** for client identification and deduplication
+- **Chilean regions** pre-configured in address forms
+- **Currency formatting** in Chilean Pesos (CLP)
+- **Spanish UI** with localized labels and messages
+- **GPS integration** for address autocomplete using Chilean geocoding
+
+## Technical Stack
+
+CotizaClima is a client-side web application with Firebase backend:
+
+- **Frontend**: Vanilla JavaScript with responsive CSS
+- **Authentication**: Firebase Authentication with email/password
+- **Database**: Firebase Realtime Database for quotes, clients, and equipment catalog
+- **PDF Generation**: jsPDF with auto-table plugin
+- **Deployment**: Static hosting (works with any web server)
+
+## Next Steps
+
+<Steps>
+  <Step title="Get Started">
+    Follow the [Quickstart Guide](/quickstart) to deploy your own instance
+  </Step>
+  <Step title="Configure Firebase">
+    Set up [Firebase](/configuration/firebase-setup) for authentication and data storage
+  </Step>
+  <Step title="Customize">
+    Learn how to [customize](/guides/customization) branding, pricing, and services
+  </Step>
+  <Step title="Explore API">
+    Review the [API Reference](/api/firebase-auth) to extend functionality
+  </Step>
+</Steps>
+
+## Who is this for?
+
+CotizaClima is perfect for:
+
+- **HVAC installers** who need professional quotes for clients
+- **AC retailers** managing sales pipelines and client relationships
+- **Service technicians** offering maintenance contracts
+- **Small businesses** looking for an affordable quotation system
+
+<Note>
+CotizaClima is designed to work offline-first with demo data, allowing you to explore the full interface without configuring Firebase. For production use, you'll need to set up Firebase Authentication and Realtime Database.
+</Note>

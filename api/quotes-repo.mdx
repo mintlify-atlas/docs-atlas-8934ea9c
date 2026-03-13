@@ -1,0 +1,278 @@
+---
+title: 'QuotesRepo'
+description: 'Repository for managing quote documents in Firebase Realtime Database'
+---
+
+# QuotesRepo
+
+The `QuotesRepo` provides CRUD operations for managing quotes in Firebase Realtime Database.
+
+## Overview
+
+Quotes are stored under the path `quotes/{uid}/{quoteId}` with the following structure:
+
+```javascript
+{
+  ownerUid: string,
+  createdAt: number,  // Unix timestamp (milliseconds)
+  updatedAt: number,  // Unix timestamp (milliseconds)
+  // ... additional quote fields
+}
+```
+
+## Database Configuration
+
+The repository uses `FIREBASE_CONNECTION.databaseURL` or defaults to:
+
+```javascript
+const DEFAULT_DB_URL = 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/';
+```
+
+## Methods
+
+### listQuotes
+
+Retrieves all quotes for a user, sorted by most recently updated.
+
+```javascript quotes-repo.js
+const quotes = await QuotesRepo.listQuotes(uid, idToken)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token for authentication
+</ParamField>
+
+<ResponseField name="return" type="array">
+  Array of quote objects, each containing `id` plus all stored fields, sorted by `updatedAt` or `createdAt` descending
+</ResponseField>
+
+**Example:**
+
+```javascript
+const user = FirebaseAuthService.getCurrentUser();
+const idToken = await FirebaseAuthService.getValidIdToken();
+
+const quotes = await QuotesRepo.listQuotes(user.uid, idToken);
+console.log(`Found ${quotes.length} quotes`);
+
+quotes.forEach(quote => {
+  console.log(`${quote.id}: ${quote.clientName} - ${new Date(quote.updatedAt)}`);
+});
+```
+
+**Implementation Details:**
+
+From quotes-repo.js:36-43, quotes are:
+1. Fetched as an object `{quoteId: payload, ...}`
+2. Transformed to array with `id` field
+3. Sorted by `updatedAt` (or `createdAt` if no `updatedAt`), descending
+4. Returns empty array `[]` if no quotes exist
+
+---
+
+### getQuote
+
+Retrieves a single quote by ID.
+
+```javascript quotes-repo.js
+const quote = await QuotesRepo.getQuote(uid, idToken, quoteId)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="quoteId" type="string" required>
+  The quote's unique identifier
+</ParamField>
+
+<ResponseField name="return" type="object | null">
+  Quote object with `id` field plus all stored data, or `null` if not found
+</ResponseField>
+
+**Example:**
+
+```javascript
+const quote = await QuotesRepo.getQuote(user.uid, idToken, 'quote-abc123');
+
+if (!quote) {
+  alert('Cotización no encontrada');
+  return;
+}
+
+console.log('Quote loaded:', quote.id, quote.clientName);
+```
+
+---
+
+### saveQuote
+
+Creates a new quote or updates an existing one.
+
+```javascript quotes-repo.js
+const result = await QuotesRepo.saveQuote(uid, idToken, quotePayload, quoteId)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="quotePayload" type="object" required>
+  Quote data object containing all fields to store
+</ParamField>
+
+<ParamField path="quoteId" type="string" optional>
+  Quote ID for updates. If omitted, creates a new quote with auto-generated ID
+</ParamField>
+
+<ResponseField name="id" type="string">
+  The quote's unique identifier (auto-generated for new quotes)
+</ResponseField>
+
+<ResponseField name="payload" type="object">
+  The complete stored payload including `ownerUid`, `createdAt`, and `updatedAt`
+</ResponseField>
+
+**Behavior:**
+
+- **Create** (no `quoteId`): Uses `POST` to generate new ID, returns `{id, payload}`
+- **Update** (with `quoteId`): Uses `PUT` to replace document, preserves `createdAt`, updates `updatedAt`
+
+**Example (Create):**
+
+```javascript
+const newQuote = {
+  clientName: 'Juan Pérez',
+  clientRut: '12345678-9',
+  equipmentSelections: [...],
+  totalPrice: 1500000
+};
+
+const result = await QuotesRepo.saveQuote(user.uid, idToken, newQuote);
+console.log('Created quote:', result.id);
+// result.payload includes ownerUid, createdAt, updatedAt
+```
+
+**Example (Update):**
+
+```javascript
+const updatedQuote = {
+  ...existingQuote,
+  totalPrice: 1650000,
+  createdAt: existingQuote.createdAt // preserve original createdAt
+};
+
+const result = await QuotesRepo.saveQuote(
+  user.uid, 
+  idToken, 
+  updatedQuote, 
+  'quote-abc123'
+);
+console.log('Updated quote:', result.id);
+```
+
+<Note>
+  Always include `createdAt` in `quotePayload` when updating to preserve the original creation timestamp. If omitted, it will be set to the current timestamp.
+</Note>
+
+**Implementation Details:**
+
+From quotes-repo.js:51-78:
+- Automatically adds `ownerUid`, `updatedAt`, and `createdAt`
+- Uses `PUT` for updates (quoteId provided)
+- Uses `POST` for creation (no quoteId), extracts `name` field from response as new ID
+- Throws error if POST succeeds but returns no `name` field
+
+---
+
+### deleteQuote
+
+Deletes a quote by ID.
+
+```javascript quotes-repo.js
+await QuotesRepo.deleteQuote(uid, idToken, quoteId)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="quoteId" type="string" required>
+  The quote's unique identifier to delete
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  Returns `true` on successful deletion
+</ResponseField>
+
+**Example:**
+
+```javascript
+if (confirm('¿Eliminar esta cotización?')) {
+  try {
+    await QuotesRepo.deleteQuote(user.uid, idToken, quoteId);
+    alert('Cotización eliminada');
+    window.location.reload();
+  } catch (error) {
+    alert('Error al eliminar: ' + error.message);
+  }
+}
+```
+
+**Implementation Details:**
+
+From quotes-repo.js:80-83:
+- Sends `DELETE` request to `quotes/{uid}/{quoteId}`
+- Returns `true` on success
+- Throws error on failure (caught by caller)
+
+---
+
+## Error Handling
+
+All methods throw errors on failure with messages from Firebase or HTTP status codes:
+
+```javascript
+try {
+  await QuotesRepo.saveQuote(user.uid, idToken, payload);
+} catch (error) {
+  console.error('Failed to save quote:', error.message);
+  // error.message contains Firebase error or "HTTP 401", "HTTP 500", etc.
+}
+```
+
+Common errors:
+- **401 Unauthorized**: Invalid or expired `idToken`
+- **Permission denied**: User doesn't own the quote
+- **Network errors**: Connection issues
+
+## Path Structure
+
+Quotes are stored at:
+
+```
+quotes/
+  {uid}/
+    {quoteId}/
+      ownerUid: {uid}
+      createdAt: 1234567890000
+      updatedAt: 1234567890000
+      clientName: "..."
+      // ... other fields
+```

@@ -1,0 +1,392 @@
+---
+title: 'ClientRepo'
+description: 'Repository for managing client documents with RUT-based deduplication'
+---
+
+# ClientRepo
+
+The `ClientRepo` provides CRUD operations for managing client records in Firebase Realtime Database with automatic deduplication based on Chilean RUT (tax ID).
+
+## Overview
+
+Clients are stored under the path `clients/{uid}/{clientId}` where `clientId` is a normalized RUT.
+
+```javascript
+{
+  name: string,
+  rut: string,
+  rutKey: string,        // normalized RUT used as ID
+  phone: string,
+  email: string,
+  address: string,
+  city: string,
+  region: string,
+  property: string,
+  notes: string,
+  createdAt: number,     // Unix timestamp (ms)
+  updatedAt: number,     // Unix timestamp (ms)
+  quoteIds: {            // Set of associated quote IDs
+    [quoteId]: true
+  }
+}
+```
+
+## Database Configuration
+
+Uses `FIREBASE_CONNECTION.databaseURL` or defaults to:
+
+```javascript
+const DEFAULT_DB_URL = 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/';
+```
+
+## Methods
+
+### normalizeRut
+
+Normalizes a Chilean RUT for consistent storage and lookup.
+
+```javascript client-repo.js
+const normalized = ClientRepo.normalizeRut(rut)
+```
+
+<ParamField path="rut" type="string" required>
+  Raw RUT string (e.g., "12.345.678-9" or "12345678-9")
+</ParamField>
+
+<ResponseField name="return" type="string">
+  Normalized RUT: removes dots and spaces, lowercase, keeps hyphen. Returns empty string if invalid input.
+</ResponseField>
+
+**Examples:**
+
+```javascript
+ClientRepo.normalizeRut('12.345.678-9')  // → '12345678-9'
+ClientRepo.normalizeRut('12 345 678-9')  // → '12345678-9'
+ClientRepo.normalizeRut('12.345.678-K')  // → '12345678-k'
+ClientRepo.normalizeRut('invalid')       // → 'invalid'
+ClientRepo.normalizeRut(null)            // → ''
+```
+
+**Implementation Details:**
+
+From client-repo.js:36-41:
+- Removes all dots (`.`) and spaces
+- Converts to lowercase
+- Trims whitespace
+- Preserves hyphen
+- Returns empty string for non-string input
+
+---
+
+### resolveClientId
+
+Generates a stable client ID based on normalized RUT.
+
+```javascript client-repo.js
+const clientId = ClientRepo.resolveClientId(client)
+```
+
+<ParamField path="client" type="object" required>
+  Client object with `rut` field
+</ParamField>
+
+<ResponseField name="return" type="string | null">
+  Normalized RUT if valid (at least one digit, hyphen, and minimum 3 characters), otherwise `null`
+</ResponseField>
+
+**Examples:**
+
+```javascript
+ClientRepo.resolveClientId({ rut: '12.345.678-9' })  // → '12345678-9'
+ClientRepo.resolveClientId({ rut: '1-2' })          // → null (too short)
+ClientRepo.resolveClientId({ rut: 'invalid' })      // → null (no digit)
+ClientRepo.resolveClientId({ name: 'Juan' })        // → null (no rut)
+ClientRepo.resolveClientId(null)                    // → null
+```
+
+**Implementation Details:**
+
+From client-repo.js:43-50:
+- Normalizes the RUT
+- Validates minimum format: at least one digit + minimum 3 chars
+- Returns `null` for invalid RUTs (cannot deduplicate)
+
+---
+
+### listClients
+
+Retrieves all clients for a user, sorted alphabetically by name.
+
+```javascript client-repo.js
+const clients = await ClientRepo.listClients(uid, idToken)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ResponseField name="return" type="array">
+  Array of client objects with `id` field, sorted by `name` using Spanish locale
+</ResponseField>
+
+**Example:**
+
+```javascript
+const user = FirebaseAuthService.getCurrentUser();
+const idToken = await FirebaseAuthService.getValidIdToken();
+
+const clients = await ClientRepo.listClients(user.uid, idToken);
+console.log(`Found ${clients.length} clients`);
+
+clients.forEach(client => {
+  console.log(`${client.name} (${client.rut})`);
+});
+```
+
+**Implementation Details:**
+
+From client-repo.js:52-59:
+- Fetches all clients as object `{clientId: data, ...}`
+- Transforms to array with `id` field
+- Sorts by `name` using `localeCompare` with Spanish locale
+- Returns empty array `[]` if no clients exist
+
+---
+
+### saveClientWithId
+
+Upserts a client record, preserving `createdAt` and `quoteIds` on updates.
+
+```javascript client-repo.js
+const clientId = await ClientRepo.saveClientWithId(uid, idToken, clientData, clientId)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="clientData" type="object" required>
+  Client data object with fields: `name`, `rut`, `phone`, `email`, `address`, `city`, `region`, `property`, `notes`
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  Normalized RUT to use as client ID (typically from `resolveClientId`)
+</ParamField>
+
+<ResponseField name="return" type="string">
+  The client ID (same as input `clientId`)
+</ResponseField>
+
+**Behavior:**
+
+1. Attempts to fetch existing client at `clients/{uid}/{clientId}`
+2. If exists: preserves `createdAt` and `quoteIds` from existing record
+3. If new: sets `createdAt` to current timestamp, initializes empty `quoteIds`
+4. Always updates `updatedAt` to current timestamp
+5. Uses `PUT` to replace the document
+
+**Example:**
+
+```javascript
+const clientData = {
+  name: 'María González',
+  rut: '23.456.789-0',
+  phone: '+56912345678',
+  email: 'maria@example.com',
+  address: 'Av. Principal 123',
+  city: 'Santiago',
+  region: 'Metropolitana',
+  property: 'Casa',
+  notes: 'Cliente preferencial'
+};
+
+const clientId = ClientRepo.resolveClientId(clientData);
+if (!clientId) {
+  alert('RUT inválido');
+  return;
+}
+
+try {
+  await ClientRepo.saveClientWithId(user.uid, idToken, clientData, clientId);
+  alert('Cliente guardado');
+} catch (error) {
+  alert('Error: ' + error.message);
+}
+```
+
+**Implementation Details:**
+
+From client-repo.js:63-96:
+- Uses GET to fetch existing record (errors silently treated as "not found")
+- Preserves `createdAt` and `quoteIds` from existing, or initializes for new
+- Sets `rutKey` field to `clientId` for reference
+- Uses `PUT` to ensure idempotent upsert
+- All fields default to empty string if not provided
+
+<Note>
+  This method is "background-safe" — errors are surfaced to caller but don't leave database in inconsistent state.
+</Note>
+
+---
+
+### syncClientForQuote
+
+Background operation to persist or update a client when saving a quote.
+
+```javascript client-repo.js
+const clientId = await ClientRepo.syncClientForQuote(uid, idToken, clientObject, quoteId)
+```
+
+<ParamField path="uid" type="string" required>
+  User's unique identifier
+</ParamField>
+
+<ParamField path="idToken" type="string" required>
+  Valid Firebase ID token
+</ParamField>
+
+<ParamField path="clientObject" type="object" required>
+  Client data object (must have `name` and valid `rut`)
+</ParamField>
+
+<ParamField path="quoteId" type="string" required>
+  Quote ID to associate with this client
+</ParamField>
+
+<ResponseField name="return" type="string | null">
+  Client ID if saved successfully, `null` if skipped or failed
+</ResponseField>
+
+**Behavior:**
+
+- **Skips** if `clientObject` has no `name` or no valid RUT
+- **Silently fails** on errors (returns `null` instead of throwing)
+- **Adds** `quoteId` to client's `quoteIds` set
+- **Preserves** existing `createdAt` and merges `quoteIds`
+- Called "fire-and-forget" from quote persistence logic
+
+**Example:**
+
+```javascript
+// Called automatically when saving a quote
+const clientData = {
+  name: 'Pedro Sánchez',
+  rut: '11.222.333-4',
+  phone: '+56987654321'
+};
+
+// This runs in the background and doesn't interrupt quote save
+const clientId = await ClientRepo.syncClientForQuote(
+  user.uid, 
+  idToken, 
+  clientData, 
+  'quote-xyz789'
+);
+
+if (clientId) {
+  console.log('Client synced:', clientId);
+} else {
+  console.log('Client sync skipped or failed (non-critical)');
+}
+```
+
+**Implementation Details:**
+
+From client-repo.js:108-156:
+- Returns `null` if no `name` or invalid RUT (can't deduplicate)
+- Fetches existing client to preserve `createdAt` and merge `quoteIds`
+- Adds current `quoteId` to `quoteIds` set
+- Wraps entire operation in try/catch, returns `null` on any error
+- Designed to not interrupt user flow if client sync fails
+
+<Note>
+  This method is designed for fire-and-forget background operations. It will never throw errors to avoid interrupting quote save operations.
+</Note>
+
+---
+
+## RUT Deduplication Strategy
+
+CotizaClima uses Chilean RUT as the deduplication key:
+
+1. **Normalize** RUT with `normalizeRut()`
+2. **Validate** with `resolveClientId()` — must have digit and be 3+ chars
+3. **Use as ID** for stable, deterministic client lookup
+4. **Skip clients** without valid RUT (can't deduplicate)
+
+**Benefits:**
+- Multiple quotes for same RUT automatically link to same client
+- Client info updates across all associated quotes
+- Prevents duplicate client records
+
+**Example Flow:**
+
+```javascript
+// User enters client info in quote form
+const clientInput = {
+  name: 'Ana Torres',
+  rut: '15.678.901-2',
+  phone: '+56923456789'
+};
+
+// Generate stable ID
+const clientId = ClientRepo.resolveClientId(clientInput);
+// → '15678901-2'
+
+// Save/update client (deduplicates automatically)
+const savedId = await ClientRepo.syncClientForQuote(
+  user.uid,
+  idToken,
+  clientInput,
+  currentQuoteId
+);
+
+// Later, same RUT in different quote will use same client record
+```
+
+## Error Handling
+
+All methods except `syncClientForQuote` throw errors on failure:
+
+```javascript
+try {
+  await ClientRepo.saveClientWithId(uid, token, data, id);
+} catch (error) {
+  console.error('Failed to save client:', error.message);
+}
+```
+
+`syncClientForQuote` returns `null` on error instead of throwing.
+
+## Path Structure
+
+Clients are stored at:
+
+```
+clients/
+  {uid}/
+    {normalizedRut}/         # e.g., "12345678-9"
+      name: "..."
+      rut: "12.345.678-9"    # original format
+      rutKey: "12345678-9"   # normalized
+      phone: "..."
+      email: "..."
+      address: "..."
+      city: "..."
+      region: "..."
+      property: "..."
+      notes: "..."
+      createdAt: 1234567890000
+      updatedAt: 1234567890000
+      quoteIds:
+        {quoteId1}: true
+        {quoteId2}: true
+```

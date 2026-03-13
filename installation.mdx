@@ -1,0 +1,631 @@
+---
+title: 'Installation'
+description: 'Deploy CotizaClima to production in minutes'
+icon: 'download'
+---
+
+CotizaClima is a static web application that runs entirely in the browser. No backend server required. Deploy to any web server, CDN, or local environment.
+
+## Deployment Options
+
+<CardGroup cols={3}>
+  <Card title="Static Hosting" icon="cloud">
+    Deploy to Netlify, Vercel, or GitHub Pages
+  </Card>
+  <Card title="Web Server" icon="server">
+    Host on Apache, Nginx, or IIS
+  </Card>
+  <Card title="Firebase Hosting" icon="fire">
+    One-click deploy with integrated database
+  </Card>
+</CardGroup>
+
+## Quick Install
+
+<Steps>
+  <Step title="Download the Files">
+    Clone or download the CotizaClima repository:
+
+    ```bash
+    git clone https://github.com/your-org/cotizaclima.git
+    cd cotizaclima
+    ```
+
+    The application consists of:
+
+    ```bash File Structure
+    cotizaclima/
+    ├── index.html              # Main application
+    ├── quotes.html             # Quote history page
+    ├── clients.html            # Client management page
+    ├── app.js                  # Core application logic (652KB)
+    ├── firebase-auth.js        # Authentication service
+    ├── quotes-repo.js          # Quote persistence
+    ├── client-repo.js          # Client database
+    ├── ranking-repo.js         # Equipment popularity tracking
+    ├── quote-persistence.js    # Local storage utilities
+    ├── quotes.js               # History page logic
+    ├── styles.css              # Main styles (33KB)
+    ├── quotes.css              # History page styles
+    └── assets/
+        └── img/                # Brand logos
+    ```
+  </Step>
+
+  <Step title="Configure Firebase (Optional)">
+    CotizaClima works offline by default with demo data. For cloud features, configure Firebase:
+
+    <Tabs>
+      <Tab title="Equipment Database">
+        Edit `app.js` line 64:
+
+        ```javascript app.js:64
+        const FIREBASE_CONNECTION = {
+          databaseURL: 'https://your-project-default-rtdb.firebaseio.com/',
+          node: 'air_conditioners',  // Database node for equipment
+          authToken: ''               // Optional: for authenticated reads
+        };
+        ```
+
+        **Database structure:**
+        ```json
+        {
+          "air_conditioners": [
+            {
+              "marca": "LG",
+              "brand_model": "LG Dual Inverter S4-W12JA3AA",
+              "type": "Split Muro",
+              "refrigerant": "R32",
+              "wifi": "Yes",
+              "warranty": "3 años",
+              "installation_kit": "Básico",
+              "capacities": [
+                {
+                  "btu_capacity": 12000,
+                  "net_price": 380000,
+                  "price_with_tax": 450000
+                }
+              ]
+            }
+          ],
+          "accessories": [
+            {
+              "id": "kit_can_9k",
+              "name": "Kit cañerías 9K",
+              "desc": "3 metros cobre 1/4 + 3/8",
+              "price": 25000,
+              "categoria": "cañerias",
+              "color": "#7C3AED"
+            }
+          ]
+        }
+        ```
+      </Tab>
+
+      <Tab title="Authentication">
+        Edit `firebase-auth.js` line 4:
+
+        ```javascript firebase-auth.js:4
+        const FIREBASE_AUTH_CONFIG = {
+          apiKey: 'AIzaSyAIvIig9S0bQPYDf_eilrPB7lWbiWPy9EU'
+        };
+        ```
+
+        **Enable authentication:**
+        1. Go to Firebase Console → Authentication
+        2. Enable Email/Password sign-in method
+        3. Create user accounts manually or via Firebase CLI
+        4. Copy Web API Key from Project Settings
+
+        <Warning>
+          Never commit your Firebase API key to public repositories. Use environment variables for production.
+        </Warning>
+      </Tab>
+
+      <Tab title="Database Rules">
+        Configure Firebase Realtime Database security rules:
+
+        ```json firebase-rules.json
+        {
+          "rules": {
+            // Public read for equipment and accessories
+            "air_conditioners": {
+              ".read": true,
+              ".write": "auth != null"
+            },
+            "accessories": {
+              ".read": true,
+              ".write": "auth != null"
+            },
+            
+            // User-specific data
+            "quotes": {
+              "$uid": {
+                ".read": "auth.uid === $uid",
+                ".write": "auth.uid === $uid"
+              }
+            },
+            "clients": {
+              "$uid": {
+                ".read": "auth.uid === $uid",
+                ".write": "auth.uid === $uid"
+              }
+            },
+            "rankings": {
+              "$uid": {
+                ".read": "auth.uid === $uid",
+                ".write": "auth.uid === $uid"
+              }
+            }
+          }
+        }
+        ```
+
+        Deploy rules:
+        ```bash
+        firebase deploy --only database
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Deploy to Web Server">
+    <Tabs>
+      <Tab title="Local Server">
+        **Python HTTP Server:**
+        ```bash
+        python3 -m http.server 8000
+        ```
+        Open http://localhost:8000
+
+        **Node.js (http-server):**
+        ```bash
+        npx http-server -p 8000
+        ```
+
+        **PHP Built-in Server:**
+        ```bash
+        php -S localhost:8000
+        ```
+      </Tab>
+
+      <Tab title="Apache">
+        Copy files to web root:
+        ```bash
+        sudo cp -r cotizaclima/* /var/www/html/
+        ```
+
+        **Optional .htaccess:**
+        ```apache .htaccess
+        # Enable compression
+        <IfModule mod_deflate.c>
+          AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript
+        </IfModule>
+
+        # Cache static assets
+        <IfModule mod_expires.c>
+          ExpiresActive On
+          ExpiresByType text/css "access plus 1 month"
+          ExpiresByType application/javascript "access plus 1 month"
+          ExpiresByType image/png "access plus 1 year"
+        </IfModule>
+
+        # Security headers
+        Header set X-Content-Type-Options "nosniff"
+        Header set X-Frame-Options "SAMEORIGIN"
+        ```
+      </Tab>
+
+      <Tab title="Nginx">
+        Create server block:
+        ```nginx /etc/nginx/sites-available/cotizaclima
+        server {
+            listen 80;
+            server_name cotizaclima.example.com;
+            root /var/www/cotizaclima;
+            index index.html;
+
+            location / {
+                try_files $uri $uri/ =404;
+            }
+
+            # Cache static assets
+            location ~* \.(css|js|png|jpg|jpeg|gif|svg|webp)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+
+            # Security headers
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "SAMEORIGIN" always;
+
+            # Gzip compression
+            gzip on;
+            gzip_types text/css application/javascript;
+        }
+        ```
+
+        Enable and restart:
+        ```bash
+        sudo ln -s /etc/nginx/sites-available/cotizaclima /etc/nginx/sites-enabled/
+        sudo nginx -t
+        sudo systemctl restart nginx
+        ```
+      </Tab>
+
+      <Tab title="Firebase Hosting">
+        Install Firebase CLI:
+        ```bash
+        npm install -g firebase-tools
+        firebase login
+        ```
+
+        Initialize hosting:
+        ```bash
+        firebase init hosting
+        ```
+
+        **firebase.json:**
+        ```json
+        {
+          "hosting": {
+            "public": ".",
+            "ignore": [
+              "firebase.json",
+              "**/.*",
+              "**/node_modules/**"
+            ],
+            "headers": [
+              {
+                "source": "**/*.@(css|js)",
+                "headers": [
+                  {
+                    "key": "Cache-Control",
+                    "value": "max-age=31536000"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        ```
+
+        Deploy:
+        ```bash
+        firebase deploy --only hosting
+        ```
+
+        Your app is now live at:
+        ```
+        https://your-project.web.app
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Verify Installation">
+    Open the deployed URL and verify:
+
+    <Tabs>
+      <Tab title="Basic Functionality">
+        - [ ] Index page loads without errors
+        - [ ] Equipment catalog displays (demo data or Firebase)
+        - [ ] Filters work (brand, BTU, refrigerant)
+        - [ ] Equipment selection increments quantity
+        - [ ] Service selection enables next step
+        - [ ] Client form validates required fields
+        - [ ] PDF generation downloads successfully
+      </Tab>
+
+      <Tab title="Firebase Features">
+        - [ ] Firebase status dot shows green (connected)
+        - [ ] Equipment loads from Firebase (not demo)
+        - [ ] Login modal opens from hamburger menu
+        - [ ] Authentication succeeds with test credentials
+        - [ ] Quote history page accessible (quotes.html)
+        - [ ] Saved quotes persist across sessions
+        - [ ] Client autocomplete works
+      </Tab>
+
+      <Tab title="Browser Console">
+        Check for errors in DevTools Console (F12):
+
+        **Expected messages:**
+        ```
+        ✅ X equipos cargados desde Firebase
+        ✅ Firebase conectado
+        ```
+
+        **Warning messages (safe to ignore):**
+        ```
+        ⚠️ Accesorios: usando datos demo
+        ⚠️ Sin sesión Firebase — usando datos demo
+        ```
+
+        **Error messages (needs fixing):**
+        ```
+        ❌ HTTP 401 — verifica la URL y las reglas de lectura
+        ❌ Configura FIREBASE_AUTH_CONFIG.apiKey
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Advanced Configuration
+
+### Custom Domain (Firebase Hosting)
+
+```bash
+firebase hosting:channel:deploy production
+firebase target:apply hosting prod your-project
+```
+
+Add custom domain in Firebase Console → Hosting.
+
+### SSL/TLS Certificate
+
+<CodeGroup>
+```bash Let's Encrypt (Certbot)
+sudo certbot --nginx -d cotizaclima.example.com
+```
+
+```bash Cloudflare
+# Enable proxy in Cloudflare DNS
+# SSL mode: Full (strict)
+```
+</CodeGroup>
+
+### Environment Variables
+
+For production deployments, use environment variables:
+
+```javascript env.js
+// Load before app.js
+window.ENV_CONFIG = {
+  FIREBASE_DB_URL: process.env.FIREBASE_DB_URL,
+  FIREBASE_API_KEY: process.env.FIREBASE_API_KEY
+};
+```
+
+```javascript app.js (modified)
+const FIREBASE_CONNECTION = {
+  databaseURL: window.ENV_CONFIG?.FIREBASE_DB_URL || '',
+  node: 'air_conditioners',
+  authToken: ''
+};
+```
+
+### Offline Support
+
+CotizaClima works offline by default, but you can add a Service Worker for full PWA support:
+
+```javascript service-worker.js
+const CACHE_NAME = 'cotizaclima-v1';
+const urlsToCache = [
+  '/',
+  '/index.html',
+  '/app.js',
+  '/styles.css',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(urlsToCache))
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request)
+      .then((response) => response || fetch(event.request))
+  );
+});
+```
+
+Register in `index.html`:
+```javascript
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js');
+}
+```
+
+## Configuration Reference
+
+### app.js Configuration
+
+```javascript Key Configuration Variables
+// Firebase connection (line 64)
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://your-project-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: ''
+};
+
+// Service definitions (line 5)
+const SERVICES = [
+  { id: 'instalacion', name: 'Instalación nueva', price: 100000 },
+  { id: 'mantencion', name: 'Mantención', price: 30000 },
+  // ... modify prices here
+];
+
+// Brand icon mapping (line 70)
+const BRAND_ICON_DIR = 'assets/img';
+const BRAND_ICON_EXTENSIONS = ['svg', 'png', 'webp', 'jpg'];
+```
+
+### firebase-auth.js Configuration
+
+```javascript Authentication Setup
+const FIREBASE_AUTH_CONFIG = {
+  apiKey: 'YOUR_FIREBASE_WEB_API_KEY'
+};
+
+const AUTH_STORAGE_KEY = 'cotiz_auth_session_v1';
+```
+
+### Quote Numbering Format
+
+```javascript app.js:378
+function buildQuoteNumber(datePart, sequence) {
+  return `CL-${datePart}-${String(sequence).padStart(4, '0')}`;
+}
+// Generates: CL-2026-0001, CL-2026-0002, etc.
+```
+
+Change the prefix by editing this function.
+
+## Troubleshooting
+
+### Firebase Connection Issues
+
+<AccordionGroup>
+  <Accordion title="Status dot stays yellow/red">
+    **Cause**: Database URL incorrect or rules deny access
+
+    **Solution**:
+    1. Verify `databaseURL` in `app.js:64` matches Firebase Console
+    2. Check Database Rules allow public `.read: true`
+    3. Open browser DevTools Network tab, look for failed requests
+  </Accordion>
+
+  <Accordion title="401 Unauthorized errors">
+    **Cause**: Authentication required but not provided
+
+    **Solution**:
+    - For public read: Set rules to `.read: true`
+    - For authenticated read: Login first, or provide `authToken` in config
+  </Accordion>
+
+  <Accordion title="Equipment loads demo data">
+    **Cause**: Firebase connection failed, app fell back to demo
+
+    **Solution**:
+    ```javascript app.js:273
+    // Check if DEMO_DATA is being used
+    function loadDemoData() {
+      allAC = DEMO_DATA;  // ← Fallback triggered
+    }
+    ```
+    This is expected behavior when Firebase is unavailable.
+  </Accordion>
+</AccordionGroup>
+
+### PDF Generation Issues
+
+<AccordionGroup>
+  <Accordion title="PDF button does nothing">
+    **Cause**: jsPDF libraries not loaded
+
+    **Solution**:
+    ```html index.html:9-10
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js"></script>
+    ```
+    Verify these CDN links are accessible. For offline, download and host locally.
+  </Accordion>
+
+  <Accordion title="Logo missing in PDF">
+    **Cause**: `refripro.png` not found
+
+    **Solution**:
+    ```javascript app.js:1161
+    async function getPdfLogoSource() {
+      // Add your logo file to root directory
+      return 'data:image/png;base64,...';
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Authentication Issues
+
+<AccordionGroup>
+  <Accordion title="Login fails with API key error">
+    **Cause**: `FIREBASE_AUTH_CONFIG.apiKey` not set
+
+    **Solution**:
+    ```javascript firebase-auth.js:35
+    function getApiKey() {
+      const key = (FIREBASE_AUTH_CONFIG.apiKey || '').trim();
+      if (!key || key === '') {
+        throw new Error('Configura FIREBASE_AUTH_CONFIG.apiKey');
+      }
+      return key;
+    }
+    ```
+    Get API key from Firebase Console → Project Settings → Web API Key
+  </Accordion>
+
+  <Accordion title="Token expired errors">
+    **Cause**: Session token expired (default 1 hour)
+
+    **Solution**: Automatic refresh implemented in `firebase-auth.js:61`
+    ```javascript
+    async function refreshIdToken(refreshToken) {
+      // Automatically refreshes before expiry
+    }
+    ```
+    User should not see this. If error persists, clear sessionStorage.
+  </Accordion>
+</AccordionGroup>
+
+## Performance Optimization
+
+### File Size Reduction
+
+The app.js file is large (652KB) due to embedded demo data. For production:
+
+```bash
+# Minify JavaScript
+npx terser app.js -o app.min.js -c -m
+
+# Minify CSS
+npx csso styles.css -o styles.min.css
+```
+
+Update references in `index.html`:
+```html
+<script src="app.min.js"></script>
+<link rel="stylesheet" href="styles.min.css">
+```
+
+### CDN Acceleration
+
+Host static assets on a CDN:
+
+```html
+<!-- Cloudflare, AWS CloudFront, etc. -->
+<script src="https://cdn.example.com/cotizaclima/app.min.js"></script>
+<link rel="stylesheet" href="https://cdn.example.com/cotizaclima/styles.min.css">
+```
+
+### Lazy Loading
+
+For brand logos:
+```html
+<img src="assets/img/lg.svg" loading="lazy">
+```
+Already implemented in `app.js:521`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Firebase Setup" icon="database" href="/configuration/firebase-setup">
+    Configure cloud database and authentication
+  </Card>
+  
+  <Card title="Equipment Catalog" icon="snowflake" href="/features/equipment-catalog">
+    Import and manage AC equipment data
+  </Card>
+  
+  <Card title="Customization" icon="palette" href="/guides/customization">
+    Brand the app with your company colors and logo
+  </Card>
+  
+  <Card title="Authentication" icon="users" href="/configuration/authentication">
+    Configure email/password authentication
+  </Card>
+</CardGroup>

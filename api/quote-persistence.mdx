@@ -1,0 +1,253 @@
+---
+title: 'Quote Persistence'
+description: 'API for saving and loading quotes in CotizaClima'
+icon: 'floppy-disk'
+---
+
+## Overview
+
+The Quote Persistence module provides functions to save and restore quote data. It handles authentication, persistence to Firebase, and synchronization with client and ranking repositories.
+
+## CotizQuotePersistence
+
+Global object exposed on `window.CotizQuotePersistence` that provides quote persistence functions.
+
+### persistCurrentQuote
+
+Saves the current quote state to Firebase.
+
+<ParamField path="status" type="string" required>
+  Quote status: `'draft'` or `'issued'`
+</ParamField>
+
+<ParamField path="options" type="object">
+  <ParamField path="requireAuth" type="boolean">
+    If `true`, throws error if user is not authenticated. Defaults to `false`.
+  </ParamField>
+  <ParamField path="silent" type="boolean">
+    If `true`, suppresses toast notifications. Defaults to `false`.
+  </ParamField>
+</ParamField>
+
+<ResponseField name="return" type="object | null">
+  Returns the saved quote object with `id` property, or `null` if save failed.
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+// Save as draft (requires auth, shows toast)
+const result = await window.CotizQuotePersistence.persistCurrentQuote('draft', {
+  requireAuth: true,
+  silent: false
+});
+
+if (result) {
+  console.log('Quote saved with ID:', result.id);
+}
+```
+
+```javascript Silent Save
+// Save as issued silently (no toast, no auth requirement)
+const result = await window.CotizQuotePersistence.persistCurrentQuote('issued', {
+  requireAuth: false,
+  silent: true
+});
+```
+</CodeGroup>
+
+<Note>
+  This function automatically syncs client data and AC ranking counters in the background.
+</Note>
+
+### saveDraftQuote
+
+Convenience wrapper that saves current quote as draft with authentication required.
+
+<ResponseField name="return" type="object | null">
+  Returns the saved quote object with `id` property, or `null` if save failed.
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+// Available globally
+const result = await window.saveDraftQuote();
+
+if (result) {
+  console.log('Draft saved:', result.id);
+}
+```
+</CodeGroup>
+
+<Note>
+  This is equivalent to calling `persistCurrentQuote('draft', { requireAuth: true, silent: false })`.
+</Note>
+
+### PENDING_QUOTE_STORAGE_KEY
+
+Constant string key used for sessionStorage.
+
+<ResponseField name="value" type="string">
+  `'cotiz_pending_quote_v1'`
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+const key = window.CotizQuotePersistence.PENDING_QUOTE_STORAGE_KEY;
+console.log(key); // 'cotiz_pending_quote_v1'
+```
+</CodeGroup>
+
+---
+
+## CotizPersistenceBridge
+
+Global object exposed on `window.CotizPersistenceBridge` that provides snapshot import/export and quote ID management.
+
+### exportQuoteSnapshot
+
+Exports the current application state as a quote snapshot object.
+
+<ParamField path="status" type="string" default="draft">
+  Quote status: `'draft'` or `'issued'`
+</ParamField>
+
+<ResponseField name="return" type="object">
+  <ResponseField name="schemaVersion" type="number">
+    Schema version (currently `1`)
+  </ResponseField>
+  <ResponseField name="status" type="string">
+    Quote status
+  </ResponseField>
+  <ResponseField name="quoteNumber" type="string">
+    Quote number (e.g., `'CL-2026-0001'`)
+  </ResponseField>
+  <ResponseField name="quoteDate" type="string">
+    ISO timestamp
+  </ResponseField>
+  <ResponseField name="activeQuoteId" type="string | null">
+    Firebase quote ID if saved
+  </ResponseField>
+  <ResponseField name="client" type="object">
+    Client information (name, rut, phone, email, address, city, region, property, notes)
+  </ResponseField>
+  <ResponseField name="notes" type="object">
+    Service and client notes
+  </ResponseField>
+  <ResponseField name="equipmentSelections" type="array">
+    Array of selected equipment with marca, brandModel, btu, qty
+  </ResponseField>
+  <ResponseField name="serviceSelection" type="object">
+    Service configuration (selectedService, serviceQtyMap, unit values, repair values)
+  </ResponseField>
+  <ResponseField name="accessoriesQty" type="object">
+    Accessories quantities by ID
+  </ResponseField>
+  <ResponseField name="pricing" type="object">
+    Price breakdown (equipment, services, accessories, subtotal, discount, total)
+  </ResponseField>
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+const snapshot = window.CotizPersistenceBridge.exportQuoteSnapshot('draft');
+
+console.log(snapshot.quoteNumber); // 'CL-2026-0042'
+console.log(snapshot.client.name); // 'Juan Pérez'
+console.log(snapshot.pricing.total); // 850000
+```
+</CodeGroup>
+
+### importQuoteSnapshot
+
+Restores application state from a quote snapshot.
+
+<ParamField path="snapshot" type="object" required>
+  Quote snapshot object (as returned by `exportQuoteSnapshot`)
+</ParamField>
+
+<CodeGroup>
+```javascript Example
+// Load quote from snapshot
+const snapshot = await fetchQuoteFromFirebase(quoteId);
+window.CotizPersistenceBridge.importQuoteSnapshot(snapshot);
+
+// App state is now restored and navigates to step 5 (summary)
+```
+</CodeGroup>
+
+<Note>
+  This function resets all application state, restores equipment/services/accessories, and navigates to the summary step.
+</Note>
+
+### getActiveQuoteId
+
+Returns the current active quote ID (if quote was loaded/saved).
+
+<ResponseField name="return" type="string | null">
+  Firebase quote ID or `null`
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+const quoteId = window.CotizPersistenceBridge.getActiveQuoteId();
+if (quoteId) {
+  console.log('Editing quote:', quoteId);
+}
+```
+</CodeGroup>
+
+### setActiveQuoteId
+
+Sets the active quote ID.
+
+<ParamField path="value" type="string | null" required>
+  Firebase quote ID or `null` to clear
+</ParamField>
+
+<CodeGroup>
+```javascript Example
+window.CotizPersistenceBridge.setActiveQuoteId('abc123');
+```
+</CodeGroup>
+
+### getQuoteNumberValue
+
+Returns the current quote number.
+
+<ResponseField name="return" type="string">
+  Quote number (e.g., `'CL-2026-0042'`)
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+const quoteNum = window.CotizPersistenceBridge.getQuoteNumberValue();
+console.log(quoteNum); // 'CL-2026-0042'
+```
+</CodeGroup>
+
+### setQuoteNumberValue
+
+Sets the quote number and updates the UI.
+
+<ParamField path="value" type="string" required>
+  Quote number to set
+</ParamField>
+
+<CodeGroup>
+```javascript Example
+window.CotizPersistenceBridge.setQuoteNumberValue('CL-2026-0099');
+```
+</CodeGroup>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="App State" icon="database" href="/api/app-state">
+    Global state variables
+  </Card>
+  <Card title="Services" icon="wrench" href="/api/services">
+    Service definitions
+  </Card>
+</CardGroup>

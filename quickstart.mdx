@@ -1,80 +1,351 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quickstart'
+description: 'Create your first quote in under 2 minutes'
+icon: 'rocket'
 ---
 
-## Get started in three steps
+Get up and running with CotizaClima in minutes. This guide walks you through creating your first professional HVAC quote from equipment selection to PDF generation.
 
-Get your documentation site running locally and make your first customization.
+## What You'll Build
 
-### Step 1: Set up your local environment
+By the end of this quickstart, you'll have:
+- Selected air conditioning equipment from the catalog
+- Configured installation services
+- Added optional accessories
+- Entered client information
+- Generated a professional PDF quote
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Prerequisites
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+All you need is:
+- A modern web browser (Chrome, Firefox, Safari, Edge)
+- The CotizaClima application files (see [Installation](/installation))
+- 2 minutes of your time
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  CotizaClima works 100% offline by default. No internet connection required to create quotes.
 </Note>
+
+## Create Your First Quote
+
+<Steps>
+  <Step title="Open the Application">
+    Navigate to `index.html` in your web browser. You'll see the CotizaClima interface with a 5-step wizard:
+
+    1. **Equipo** (Equipment)
+    2. **Servicio** (Service)
+    3. **Extras** (Accessories)
+    4. **Cliente** (Client)
+    5. **Resumen** (Summary)
+
+    The wizard automatically tracks your progress through the top step indicator.
+  </Step>
+
+  <Step title="Select Equipment">
+    Filter and select air conditioning units:
+
+    ```html
+    <!-- Search by brand or model -->
+    <input id="searchInput" placeholder="Buscar marca o modelo…">
+    
+    <!-- Filter by capacity, refrigerant, brand -->
+    <select id="filterBTU">  <!-- 9K, 12K, 18K, 24K, 36K -->
+    <select id="filterRef">  <!-- R32, R410 -->
+    <select id="filterBrand"> <!-- All brands from catalog -->
+    ```
+
+    **To add equipment:**
+    - Browse the equipment grid (loaded from Firebase or demo data)
+    - Click a BTU capacity button (9K, 12K, 18K, etc.)
+    - Use **+/−** buttons to adjust quantity
+    - Multiple equipment types can be selected
+
+    <Info>
+      The "Más cotizados" (Most Quoted) button sorts equipment by popularity when logged in with Firebase Authentication.
+    </Info>
+
+    Click the **→** (forward) button or navigate to **Servicio** when ready.
+  </Step>
+
+  <Step title="Choose Service Type">
+    Select the type of service from 6 options:
+
+    <CodeGroup>
+    ```javascript Service Types
+    const SERVICES = [
+      { 
+        id: 'instalacion',
+        name: 'Instalación nueva',
+        desc: 'Primera instalación del equipo',
+        price: 100000
+      },
+      { 
+        id: 'mantencion',
+        name: 'Mantención',
+        desc: 'Limpieza y revisión general',
+        price: 30000
+      },
+      { 
+        id: 'cambio',
+        name: 'Cambio + instalación',
+        desc: 'Retiro equipo antiguo + nuevo',
+        price: 120000
+      },
+      { 
+        id: 'reparacion',
+        name: 'Reparación',
+        desc: 'Diagnóstico y reparación',
+        price: 10000
+      },
+      { 
+        id: 'garantia',
+        name: 'Visita garantía',
+        desc: 'Revisión por garantía vigente',
+        price: 0
+      },
+      { 
+        id: 'presupuesto',
+        name: 'Solo presupuesto',
+        desc: 'Cotización sin instalación',
+        price: 0
+      }
+    ];
+    ```
+    </CodeGroup>
+
+    **Multi-service support:**
+    - Installation and maintenance services support multiple quantities
+    - Unit prices can be edited inline
+    - Service notes can be added (appear in final PDF)
+
+    The app automatically preloads 1 installation per equipment selected.
+  </Step>
+
+  <Step title="Add Accessories (Optional)">
+    Add extra items from the accessories catalog:
+
+    - **Cañerías** (Piping kits) - for 9K, 12-18K, 24K units
+    - **Eléctrico** (Electrical) - power cords, breakers
+    - **Instalación** (Installation) - ceiling mounts, drainage kits
+    - **Gas** (Refrigerant) - R410, R32 refills
+    - **Mantención** (Maintenance) - cleaning services
+
+    Use the **+/−** quantity controls for each accessory. Skip this step if no extras are needed.
+  </Step>
+
+  <Step title="Enter Client Information">
+    Fill in client details:
+
+    ```javascript Required Fields
+    {
+      name: 'Juan Pérez González',      // Required
+      address: 'Calle Principal 123'    // Required
+    }
+    ```
+
+    ```javascript Optional Fields
+    {
+      rut: '12.345.678-9',
+      phone: '+56 9 1234 5678',
+      email: 'correo@ejemplo.cl',
+      city: 'Curicó',
+      region: 'Maule',
+      property: 'Casa',  // Casa, Departamento, Oficina, etc.
+      notes: 'Piso 2, acceso por escalera'
+    }
+    ```
+
+    <Info>
+      The **Usar GPS** button autofills address and city from your current location using the browser's geolocation API.
+    </Info>
+
+    When Firebase Authentication is enabled, clients with RUT are automatically saved to the clients database for future quotes.
+  </Step>
+
+  <Step title="Review and Generate PDF">
+    The summary page displays:
+
+    - **Quote metadata**: Number (CL-2026-0001 format), date, validity (15 days)
+    - **Client details**: All entered information
+    - **Equipment**: Model, BTU, refrigerant, editable price
+    - **Service**: Type, quantity, editable price
+    - **Accessories**: Line items with quantities
+    - **Discount**: Percentage-based discount field
+    - **Total**: Final amount with IVA (tax) included
+
+    **Edit prices** directly in the summary:
+    ```html
+    <input type="number" id="sumEquipPrice" oninput="recalcTotal()">
+    <input type="number" id="sumServicePrice" oninput="recalcTotal()">
+    <input type="number" id="discountPct" oninput="recalcTotal()">
+    ```
+
+    Click **Generar PDF · Descargar** to create and download the quote as a PDF file.
+  </Step>
+</Steps>
+
+## What Happens Next?
+
+<CardGroup cols={2}>
+  <Card title="Quote Numbering" icon="hashtag">
+    Quotes are auto-numbered in `CL-YYYY-####` format. The sequence increments automatically and syncs with Firebase when authenticated.
+  </Card>
+  
+  <Card title="PDF Generation" icon="file-pdf">
+    PDFs are generated client-side using jsPDF with:
+    - Professional branding header
+    - Equipment specifications table
+    - Service details with inclusions
+    - Terms and warranty information
+  </Card>
+  
+  <Card title="Save as Draft" icon="floppy-disk">
+    Click **Guardar borrador** to save the quote to Firebase. Requires authentication. Drafts can be reopened from the history page.
+  </Card>
+  
+  <Card title="Start New Quote" icon="rotate-right">
+    Click **Nueva cotiz.** to reset all fields and start fresh. Quote number increments automatically.
+  </Card>
+</CardGroup>
+
+## Navigation Methods
+
+CotizaClima offers flexible navigation:
+
+<CodeGroup>
+```javascript Bottom Navigation Bar
+// Fixed bottom bar with 5 steps
+<button id="nav1" onclick="goToStep(1)">Equipo</button>
+<button id="nav2" onclick="goToStep(2)">Servicio</button>
+<button id="nav3" onclick="goToStep(3)">Extras</button>
+<button id="nav4" onclick="goToStep(4)">Cliente</button>
+<button id="nav5" onclick="goToStep(5)">PDF</button>
+```
+
+```javascript Wizard Controls
+// Floating next/previous buttons
+<button id="btnWizardPrev" onclick="wizardPrevAction()">←</button>
+<button id="btnWizardNext" onclick="wizardNextAction()">→</button>
+// Automatically enabled/disabled based on required fields
+```
+
+```javascript Top Step Indicator
+// Visual progress tracker
+<div class="step-bar">
+  <div class="step-dot active">1</div>
+  <div class="step-label">Equipo</div>
+  // ... 5 steps total
+</div>
+```
+</CodeGroup>
+
+## Sample Quote Data
+
+Here's what a typical quote looks like in the system:
+
+```json
+{
+  "quoteNumber": "CL-2026-0001",
+  "createdAt": 1710302400000,
+  "client": {
+    "name": "Juan Pérez González",
+    "rut": "12345678-9",
+    "phone": "+56 9 1234 5678",
+    "address": "Calle Principal 123, Curicó, Maule",
+    "property": "Casa"
+  },
+  "equipment": [
+    {
+      "model": "LG Dual Inverter",
+      "btu": 12000,
+      "refrigerant": "R32",
+      "quantity": 1,
+      "price": 450000
+    }
+  ],
+  "services": [
+    {
+      "id": "instalacion",
+      "name": "Instalación nueva",
+      "quantity": 1,
+      "unitPrice": 100000,
+      "totalPrice": 100000
+    }
+  ],
+  "accessories": [],
+  "discount": 0,
+  "total": 550000
+}
+```
+
+## Tips for First-Time Users
+
+<Warning>
+  **Required fields validation**: The forward navigation button (→) is disabled until:
+  - Step 1: At least one equipment is selected
+  - Step 2: At least one service is selected
+  - Step 4: Client name and address are filled
+</Warning>
+
+<Info>
+  **Keyboard-friendly**: All form fields support standard keyboard navigation. Use Tab to move between fields.
+</Info>
+
+## Troubleshooting
+
+### Equipment List Not Loading
+
+If you see "Cargando equipos…" indefinitely:
+
+1. Check if `FIREBASE_CONNECTION.databaseURL` is configured in `app.js`
+2. Verify Firebase Realtime Database rules allow public read access
+3. The app will fallback to demo data automatically after a few seconds
+
+```javascript app.js:64
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://your-project-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: '' // Optional
+};
+```
+
+### PDF Not Downloading
+
+Ensure the jsPDF libraries are loaded:
+
+```html index.html:9
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js"></script>
+```
+
+### Quote Number Not Incrementing
+
+Quote numbers use localStorage for persistence:
+
+```javascript app.js:408
+function getLocalQuoteCounterKey(datePart) {
+  return `cotiz_quote_counter_${datePart}`;
+}
+```
+
+Clear browser cache if the counter gets stuck, or authenticate with Firebase for cloud-synced numbering.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Deploy CotizaClima to a web server or Firebase Hosting
+  </Card>
+  
+  <Card title="Firebase Setup" icon="database" href="/configuration/firebase-setup">
+    Configure authentication and cloud data storage
+  </Card>
+  
+  <Card title="Equipment Catalog" icon="snowflake" href="/features/equipment-catalog">
+    Manage the air conditioning equipment database
+  </Card>
+  
+  <Card title="Customization" icon="palette" href="/guides/customization">
+    Customize branding, colors, and PDF templates
+  </Card>
+</CardGroup>

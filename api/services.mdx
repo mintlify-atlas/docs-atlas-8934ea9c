@@ -1,0 +1,216 @@
+---
+title: 'Services'
+description: 'Service definitions and PDF content for CotizaClima'
+icon: 'wrench'
+---
+
+## Overview
+
+The Services module defines available installation and maintenance services, along with PDF content templates for quote generation.
+
+## SERVICES Array
+
+Array of service objects available in the application. Defined in `app.js:5-12`.
+
+<ResponseField name="SERVICES" type="array">
+  Array of 6 service objects:
+</ResponseField>
+
+### Service Object Structure
+
+<ParamField path="id" type="string">
+  Service identifier: `'instalacion'`, `'mantencion'`, `'cambio'`, `'reparacion'`, `'garantia'`, `'presupuesto'`
+</ParamField>
+
+<ParamField path="name" type="string">
+  Display name (Spanish)
+</ParamField>
+
+<ParamField path="desc" type="string">
+  Service description
+</ParamField>
+
+<ParamField path="price" type="number">
+  Default price in CLP (Chilean Pesos)
+</ParamField>
+
+<ParamField path="icon" type="string">
+  Font Awesome icon class (e.g., `'fa-hammer'`)
+</ParamField>
+
+### Available Services
+
+<CodeGroup>
+```javascript Service Definitions
+const SERVICES = [
+  {
+    id: 'instalacion',
+    name: 'Instalación nueva',
+    desc: 'Primera instalación del equipo',
+    price: 100000,
+    icon: 'fa-hammer'
+  },
+  {
+    id: 'mantencion',
+    name: 'Mantención',
+    desc: 'Limpieza y revisión general',
+    price: 30000,
+    icon: 'fa-screwdriver-wrench'
+  },
+  {
+    id: 'cambio',
+    name: 'Cambio + instalación',
+    desc: 'Retiro equipo antiguo + nuevo',
+    price: 120000,
+    icon: 'fa-arrow-right-arrow-left'
+  },
+  {
+    id: 'reparacion',
+    name: 'Reparación',
+    desc: 'Diagnóstico y reparación de fallas',
+    price: 10000,
+    icon: 'fa-gear'
+  },
+  {
+    id: 'garantia',
+    name: 'Visita garantía',
+    desc: 'Revisión por garantía vigente',
+    price: 0,
+    icon: 'fa-shield'
+  },
+  {
+    id: 'presupuesto',
+    name: 'Solo presupuesto',
+    desc: 'Cotización sin instalación',
+    price: 0,
+    icon: 'fa-clipboard-list'
+  }
+];
+```
+
+```javascript Usage Example
+// Find installation service
+const installService = SERVICES.find(s => s.id === 'instalacion');
+console.log(installService.name); // 'Instalación nueva'
+console.log(installService.price); // 100000
+
+// Iterate all services
+SERVICES.forEach(service => {
+  console.log(`${service.name}: $${service.price}`);
+});
+```
+</CodeGroup>
+
+---
+
+## SERVICE_PDF_CONTENT Object
+
+PDF content templates for generating detailed quote PDFs. Each service type has custom text blocks. Defined in `app.js:14-57`.
+
+<ResponseField name="SERVICE_PDF_CONTENT" type="object">
+  Object with service IDs as keys:
+</ResponseField>
+
+### Content Block Structure
+
+<ParamField path="title" type="string">
+  PDF section title
+</ParamField>
+
+<ParamField path="relevant" type="array">
+  Array of relevant information paragraphs
+</ParamField>
+
+<ParamField path="extra" type="array">
+  Array of additional information bullet points
+</ParamField>
+
+### Available Content Blocks
+
+The object contains detailed PDF content for:
+- `instalacion` - Installation service information
+- `mantencion` - Maintenance service information  
+- `reparacion` - Repair/diagnostic service information
+
+<Note>
+  The `cambio` service ID maps to `instalacion` content in PDF generation.
+</Note>
+
+<CodeGroup>
+```javascript Content Structure
+const SERVICE_PDF_CONTENT = {
+  instalacion: {
+    title: 'Instalación de Aire Acondicionado',
+    relevant: [
+      'Agradecemos la confianza depositada en RefriPro.',
+      'La presente cotización considera la instalación de equipo de aire acondicionado tipo Split, realizada bajo criterios técnicos y buenas prácticas de climatización para asegurar un funcionamiento seguro y eficiente.',
+      'El servicio incluye instalación de unidad interior y exterior, conexión de cañerías de refrigeración, conexión eléctrica básica, drenaje de condensado y puesta en marcha del equipo, verificando su correcto funcionamiento.'
+    ],
+    extra: [
+      'La instalación considera condiciones estándar, incluyendo hasta 3 metros de interconexión (cañerías, cableado y drenaje) entre unidades.',
+      'Trabajos adicionales como mayor distancia de cañería, canaletas o soportes especiales serán informados y cotizados previamente.',
+      'El cliente debe contar con punto eléctrico operativo y acceso adecuado al lugar de instalación.',
+      'La instalación cuenta con 1 año de garantía por el trabajo realizado por RefriPro.'
+    ]
+  },
+  // ... mantencion and reparacion blocks
+};
+```
+
+```javascript Usage Example
+// Get installation PDF content
+const installContent = SERVICE_PDF_CONTENT.instalacion;
+console.log(installContent.title); // 'Instalación de Aire Acondicionado'
+
+// Access relevant info paragraphs
+installContent.relevant.forEach(paragraph => {
+  console.log(paragraph);
+});
+
+// Access extra info bullets
+installContent.extra.forEach(item => {
+  console.log('- ' + item);
+});
+```
+</CodeGroup>
+
+### PDF Generation
+
+These content blocks are automatically included in generated PDF quotes when the corresponding service is selected.
+
+<CodeGroup>
+```javascript Integration Example
+// Used by appendServiceInfoToPdf function
+function getServiceInfoKeys(selectedServiceItems) {
+  const keys = new Set();
+  selectedServiceItems.forEach(item => {
+    const id = item && item.svc ? item.svc.id : '';
+    if (!id) return;
+    
+    // 'cambio' maps to 'instalacion' content
+    if (id === 'cambio') {
+      keys.add('instalacion');
+      return;
+    }
+    
+    if (SERVICE_PDF_CONTENT[id]) {
+      keys.add(id);
+    }
+  });
+  return [...keys];
+}
+```
+</CodeGroup>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="App State" icon="database" href="/api/app-state">
+    Service selection state
+  </Card>
+  <Card title="Quote Persistence" icon="floppy-disk" href="/api/quote-persistence">
+    Save/load quotes
+  </Card>
+</CardGroup>

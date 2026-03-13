@@ -1,0 +1,518 @@
+---
+title: Creating Quotes
+description: Complete walkthrough for creating quotes from equipment selection to PDF download
+---
+
+This guide walks you through the complete process of creating a quote in CotizaClima, from selecting equipment to generating the final PDF.
+
+## Quote Creation Workflow
+
+CotizaClima uses a 5-step wizard to guide you through creating professional HVAC quotes:
+
+<Steps>
+  <Step title="Select Equipment">
+    Choose air conditioning units by brand, model, and BTU capacity
+  </Step>
+  
+  <Step title="Choose Service">
+    Select installation, maintenance, repair, or other services
+  </Step>
+  
+  <Step title="Add Accessories">
+    Add optional accessories like piping kits, electrical components, or drainage kits
+  </Step>
+  
+  <Step title="Enter Client Information">
+    Fill in customer details including name, address, and contact information
+  </Step>
+  
+  <Step title="Review and Generate PDF">
+    Review pricing, apply discounts, and download the professional PDF quote
+  </Step>
+</Steps>
+
+## Step 1: Selecting Equipment
+
+### Search and Filter
+
+The equipment selection screen provides multiple ways to find the right unit:
+
+```javascript
+// Equipment filtering is handled by the filterAC() function in app.js
+function filterAC() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const brand = document.getElementById('filterBrand').value;
+  const btu = parseInt(document.getElementById('filterBTU').value) || 0;
+  const ref = document.getElementById('filterRef').value;
+  
+  filteredAC = allAC.filter(ac => {
+    // Filter by search term (brand or model)
+    if (search && !brandName.includes(search) && !modelName.includes(search)) return false;
+    // Filter by brand
+    if (brand && (ac.marca || '') !== brand) return false;
+    // Filter by refrigerant type
+    if (ref && ac.refrigerant !== ref) return false;
+    // Filter by BTU capacity
+    if (btu && !ac.capacities.find(c => c.btu_capacity === btu)) return false;
+    return true;
+  });
+}
+```
+
+**Available Filters:**
+- **Search bar**: Type brand name or model number
+- **Brand dropdown**: Filter by manufacturer (Daitsu, IKA, Kendal, LG, Midea, TCL, Clark)
+- **BTU capacity**: Filter by cooling capacity (9K, 12K, 14K, 18K, 22K, 24K, 36K)
+- **Refrigerant type**: Filter by R32 or R410 refrigerant
+- **Popular sorting**: Sort by most/least quoted equipment
+
+### Selecting BTU Capacity and Quantity
+
+Each equipment card displays available BTU capacities as buttons:
+
+1. **Click a BTU button** to add one unit of that capacity
+2. The card displays the current quantity (e.g., "12K x2")
+3. Use **+** and **-** buttons to adjust quantity
+4. The card shows the subtotal price including tax
+
+<Note>
+  Equipment prices are displayed with IVA (VAT) included. The `price_with_tax` field from the equipment data is used for all calculations.
+</Note>
+
+### Equipment Data Structure
+
+Equipment is loaded from Firebase Realtime Database with this structure:
+
+```javascript
+{
+  "marca": "LG",
+  "brand_model": "DUAL Inverter S4-W09JA3AA",
+  "type": "Split Muro",
+  "refrigerant": "R32",
+  "wifi": "Yes",
+  "warranty": "3 years compressor",
+  "installation_kit": "Completo",
+  "capacities": [
+    {
+      "btu_capacity": 9000,
+      "net_price": 189900,
+      "price_with_tax": 226101
+    },
+    {
+      "btu_capacity": 12000,
+      "net_price": 219900,
+      "price_with_tax": 261681
+    }
+  ]
+}
+```
+
+### Multiple Equipment Selection
+
+You can select multiple units in a single quote:
+
+- Different models at different capacities
+- Multiple quantities of the same model
+- Mix and match brands and types
+
+The equipment selection is stored in the `selectedEquipments` object keyed by `{index}__{btu}`.
+
+## Step 2: Choosing Services
+
+### Available Service Types
+
+CotizaClima offers six predefined service types in the `SERVICES` array (`app.js:5-12`):
+
+```javascript
+const SERVICES = [
+  { id:'instalacion', name:'Instalación nueva', desc:'Primera instalación del equipo', price:100000, icon:'fa-hammer' },
+  { id:'mantencion', name:'Mantención', desc:'Limpieza y revisión general', price:30000, icon:'fa-screwdriver-wrench' },
+  { id:'cambio', name:'Cambio + instalación', desc:'Retiro equipo antiguo + nuevo', price:120000, icon:'fa-arrow-right-arrow-left' },
+  { id:'reparacion', name:'Reparación', desc:'Diagnóstico y reparación de fallas', price:10000, icon:'fa-gear' },
+  { id:'garantia', name:'Visita garantía', desc:'Revisión por garantía vigente', price:0, icon:'fa-shield' },
+  { id:'presupuesto', name:'Solo presupuesto', desc:'Cotización sin instalación', price:0, icon:'fa-clipboard-list' },
+];
+```
+
+### Multi-Service Support
+
+**Instalación** and **Mantención** support multiple quantities:
+
+1. Click the service card to add one unit
+2. Use the **+** and **-** buttons to adjust quantity
+3. Modify the unit price directly in the inline input field
+4. Installation quantity is automatically capped at the number of equipment units selected
+
+```javascript
+// Installation is preloaded based on equipment count (app.js:141-155)
+function preloadInstallationsFromEquipment() {
+  const equipCount = getEquipCount();
+  if (equipCount === 0) {
+    serviceQtyMap.instalacion = 0;
+  } else if ((serviceQtyMap.instalacion || 0) === 0) {
+    // Default: 1 installation per equipment
+    serviceQtyMap.instalacion = equipCount;
+  } else {
+    // Cap installations at equipment count
+    serviceQtyMap.instalacion = Math.min(serviceQtyMap.instalacion, equipCount);
+  }
+}
+```
+
+### Repair Service Customization
+
+The **Reparación** service allows custom quantity and unit price:
+
+1. Select the service card
+2. Inline inputs appear for **Cantidad** (quantity) and **Valor unitario** (unit price)
+3. The total updates automatically as you type
+4. Default values: 1 unit at $10,000
+
+### Service Notes
+
+Add detailed observations in the **Observaciones del servicio** textarea:
+
+- Describe special conditions
+- Specify piping lengths beyond standard 3 meters
+- Note access restrictions or challenges
+- Add any custom terms
+
+These notes appear in the PDF quote below the pricing table.
+
+## Step 3: Adding Accessories
+
+Accessories are optional extras like piping kits, electrical components, and installation materials.
+
+### Accessory Categories
+
+Accessories are organized by category with custom icons defined in `ACC_ICON_MAP` (`app.js:914-943`):
+
+```javascript
+const ACC_ICON_MAP = {
+  // By ID (takes priority)
+  kit_can_9k: 'fa-ruler-combined',
+  kit_can_12_18k: 'fa-ruler-combined',
+  kit_can_24k: 'fa-ruler-combined',
+  cordon_15: 'fa-bolt',
+  cordon_25: 'fa-bolt',
+  soporte_techo: 'fa-thumbtack',
+  kit_drenaje: 'fa-droplet',
+  breaker_16a: 'fa-plug',
+  mantencion_lavado: 'fa-spray-can-sparkles',
+  gas_r410_12k: 'fa-temperature-low',
+  // Fallback by category
+  _cat_cañerias: 'fa-ruler-combined',
+  _cat_electrico: 'fa-bolt',
+  _cat_instalacion: 'fa-screwdriver-wrench',
+  _cat_mantencion: 'fa-spray-can-sparkles',
+  _cat_gas: 'fa-temperature-low',
+};
+```
+
+### Adding Accessories
+
+Each accessory card shows:
+
+- Icon with category-based color
+- Name and description
+- Unit price ("c/u" = per unit)
+- Quantity controls (**-** and **+** buttons)
+
+Click **+** to increment, **-** to decrement. The summary chip at the bottom shows total items and price.
+
+### Accessory Data Structure
+
+Accessories are loaded from Firebase (`accessories` node) with this structure:
+
+```javascript
+{
+  "id": "kit_can_12_18k",
+  "name": "Kit cañería 12K-18K",
+  "desc": "Tubería cobre + aislación + cable (5m)",
+  "price": 45000,
+  "categoria": "cañerias",
+  "color": "#4F6684"
+}
+```
+
+<Tip>
+  Accessories are optional but commonly used for installations requiring extra piping, electrical work, or specialized mounting.
+</Tip>
+
+## Step 4: Entering Client Information
+
+### Required Fields
+
+Only two fields are mandatory:
+
+- **Nombre completo** (Full name)
+- **Dirección de instalación** (Installation address)
+
+### Optional Fields
+
+- **RUT**: Chilean tax ID (only displayed in PDF if provided)
+- **Teléfono** (Phone)
+- **Correo electrónico** (Email)
+- **Ciudad** (City)
+- **Región** (Region): Dropdown with all Chilean regions
+- **Tipo de inmueble** (Property type): Casa, Departamento, Oficina, Local comercial, Bodega/Industrial
+- **Notas adicionales**: Special instructions, floor number, access details
+
+### GPS Address Autofill
+
+The **Usar GPS** button automatically fills address and city using your current location:
+
+```javascript
+// GPS autofill implementation (app.js:1838-1908)
+async function fillAddressFromGPS() {
+  // 1. Request geolocation permission
+  const position = await navigator.geolocation.getCurrentPosition();
+  
+  // 2. Reverse geocode using OpenStreetMap Nominatim API
+  const { latitude, longitude } = position.coords;
+  const reverseUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2`;
+  const response = await fetch(reverseUrl);
+  const data = await response.json();
+  
+  // 3. Parse address components
+  const address = data.address;
+  const streetAddress = buildStreetAddress(address); // Road + number + suburb
+  const city = pickCityFromAddress(address); // City/town/village
+  const region = mapRegionFromState(address.state); // Map to Chilean regions
+  
+  // 4. Fill form fields
+  if (streetAddress) addressInput.value = streetAddress;
+  if (city) cityInput.value = city;
+  if (region) regionSelect.value = region;
+}
+```
+
+<Note>
+  GPS autofill requires browser location permission and an internet connection. It uses OpenStreetMap's Nominatim API for reverse geocoding.
+</Note>
+
+### Client Data Storage
+
+When you save a quote with a RUT, client information is automatically stored in Firebase for future reference. See [Managing Clients](/guides/managing-clients) for details.
+
+## Step 5: Reviewing and Generating PDF
+
+### Summary Review
+
+The final step displays a comprehensive summary:
+
+- **Quote information**: Quote number, date, validity (15 days)
+- **Client details**: All entered information
+- **Equipment**: Model, capacity, refrigerant, price
+- **Services**: Type, quantity, unit price, total
+- **Accessories**: Name, quantity, subtotal for each
+- **Pricing**: Subtotal, discount, grand total
+
+### Adjusting Prices
+
+You can edit prices before generating the PDF:
+
+1. **Equipment price**: Editable input field shows total equipment price
+2. **Service price**: Editable input field shows total service price
+3. **Discount**: Enter a percentage (0-100%)
+   - Displays discount amount as "−$XX.XXX"
+   - Automatically recalculates total
+
+```javascript
+// Price recalculation (app.js:1118-1131)
+function recalcTotal() {
+  const equipPrice = parseFloat(document.getElementById('sumEquipPrice').value) || 0;
+  const servicePrice = parseFloat(document.getElementById('sumServicePrice').value) || 0;
+  let extrasTotal = 0;
+  ACCESSORIES.forEach(acc => {
+    extrasTotal += (accQty[acc.id]||0) * acc.price;
+  });
+  const subtotal = equipPrice + servicePrice + extrasTotal;
+  const discPct = parseFloat(document.getElementById('discountPct').value) || 0;
+  const discAmt = subtotal * discPct / 100;
+  const total = subtotal - discAmt;
+  // Update display
+}
+```
+
+### PDF Generation
+
+Click **Generar PDF · Descargar** to create a professional quote PDF:
+
+**PDF Features:**
+- Branded header with logo and company info
+- Client details section
+- Itemized table with equipment, services, and accessories
+- Clear pricing breakdown (net price, price with VAT)
+- Service-specific information sections (see below)
+- Footer with quote number and branding
+
+**Service-Specific Content:**
+
+For installation, maintenance, and repair services, the PDF includes additional information from `SERVICE_PDF_CONTENT` (`app.js:14-56`):
+
+<Tabs>
+  <Tab title="Instalación">
+    ```javascript
+    instalacion: {
+      title: 'Instalación de Aire Acondicionado',
+      relevant: [
+        'La presente cotización considera la instalación de equipo de aire acondicionado tipo Split...',
+        'El servicio incluye instalación de unidad interior y exterior, conexión de cañerías...'
+      ],
+      extra: [
+        'La instalación considera condiciones estándar, incluyendo hasta 3 metros de interconexión...',
+        'Trabajos adicionales como mayor distancia de cañería, canaletas o soportes especiales serán informados...'
+      ]
+    }
+    ```
+    
+    **Includes:**
+    - Interior and exterior unit installation
+    - Refrigeration piping connection
+    - Basic electrical connection
+    - Condensate drainage
+    - System startup and testing
+    - Up to 3 meters of piping included
+    - 1 year warranty on installation work
+  </Tab>
+  
+  <Tab title="Mantención">
+    ```javascript
+    mantencion: {
+      title: 'Mantención Preventiva',
+      relevant: [
+        'La presente cotización considera la mantención preventiva de equipos de aire acondicionado...',
+        'El servicio incluye limpieza de filtros, limpieza de evaporador y condensador...'
+      ],
+      extra: [
+        'El servicio corresponde a mantención preventiva, incluyendo limpieza y revisión general...',
+        'La mantención no incluye reparaciones ni repuestos en caso de detectarse fallas...'
+      ]
+    }
+    ```
+    
+    **Includes:**
+    - Filter cleaning
+    - Evaporator and condenser cleaning
+    - Electrical parameter check
+    - Working pressure verification
+    - General operation check
+    - Technical recommendations
+    - 30-day service warranty
+  </Tab>
+  
+  <Tab title="Reparación">
+    ```javascript
+    reparacion: {
+      title: 'Reparación / Diagnóstico',
+      relevant: [
+        'La presente cotización considera la revisión y diagnóstico técnico del equipo...',
+        'Durante la intervención se realizará una evaluación general del sistema...'
+      ],
+      extra: [
+        'El servicio considera diagnóstico técnico y revisión general del equipo.',
+        'El diagnóstico no incluye repuestos ni reparaciones, los cuales serán cotizados...'
+      ]
+    }
+    ```
+    
+    **Includes:**
+    - System evaluation
+    - Electrical component review
+    - Refrigerant pressure check
+    - Operation testing
+    - Diagnosis report
+    - Parts and repairs quoted separately
+    - Limited warranty on performed work
+  </Tab>
+</Tabs>
+
+### PDF Technical Details
+
+The PDF is generated using **jsPDF** with the **autoTable** plugin:
+
+```javascript
+// PDF generation (app.js:1136-1384)
+async function generatePDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  
+  // Header with logo and company info
+  // Client section
+  // Equipment and services table
+  // Totals
+  // Service-specific information sections
+  // Footer
+  
+  doc.save(`${quoteNumber}.pdf`);
+}
+```
+
+**Logo Customization:**
+
+The PDF logo is configured via the `PDF_LOGO_BASE64` constant (`app.js:1392`). Replace this with your company logo in base64 format:
+
+```javascript
+const PDF_LOGO_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAA...';
+// Or use full data URL:
+const PDF_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...';
+```
+
+### Saving Quotes
+
+After generating the PDF, you can:
+
+- **Guardar borrador** (Save draft): Save to Firebase for later editing
+- **Nueva cotiz.** (New quote): Reset all fields and start fresh
+- **← Editar datos** (Edit data): Go back to client info step
+
+Saved quotes appear in [Quote History](/guides/quote-history) and can be reopened for editing or re-issuing.
+
+<Card title="Next Steps" icon="arrow-right">
+  - Learn how to [manage saved quotes](/guides/quote-history)
+  - Understand [client management](/guides/managing-clients)
+  - Customize the app with [customization options](/guides/customization)
+</Card>
+
+## Quote Number Format
+
+Quote numbers follow the format: `CL-YYYY-####`
+
+Example: `CL-2026-0001`
+
+- `CL`: Company prefix
+- `YYYY`: Current year
+- `####`: Sequential number (resets each year)
+
+The sequence counter is stored in:
+1. Firebase (if authenticated): Synchronized across devices
+2. LocalStorage (fallback): `cotiz_quote_counter_YYYY`
+
+```javascript
+// Quote number generation (app.js:374-461)
+async function generateQuoteNumber() {
+  const d = new Date();
+  const datePart = getQuoteDatePart(d); // Returns year as string
+  
+  // Local fallback
+  const localNext = readLocalQuoteCounter(datePart) + 1;
+  writeLocalQuoteCounter(datePart, localNext);
+  setQuoteNumberValue(buildQuoteNumber(datePart, localNext));
+  
+  // Firebase sync (if available)
+  try {
+    const firebaseNext = await getNextQuoteSequenceFromFirebase(datePart);
+    if (firebaseNext) {
+      writeLocalQuoteCounter(datePart, firebaseNext);
+      setQuoteNumberValue(buildQuoteNumber(datePart, firebaseNext));
+    }
+  } catch (e) {
+    // Keep local counter
+  }
+}
+```
+
+<Note>
+  Legacy format `COT-YYYYMMDD-####` is still supported for backward compatibility but new quotes use the simplified `CL-YYYY-####` format.
+</Note>

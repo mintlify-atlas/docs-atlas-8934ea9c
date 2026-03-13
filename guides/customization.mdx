@@ -1,0 +1,821 @@
+---
+title: Customization
+description: How to modify services, add accessories, change branding, and customize PDF content
+---
+
+CotizaClima is designed to be customizable for different HVAC businesses. This guide covers how to modify services, accessories, branding, and PDF content to match your business needs.
+
+## Customizing Services
+
+Services are defined in the `SERVICES` array in `app.js` (lines 5-12).
+
+### Service Structure
+
+```javascript
+const SERVICES = [
+  { 
+    id: 'instalacion',           // Unique identifier
+    name: 'Instalación nueva',   // Display name
+    desc: 'Primera instalación del equipo',  // Description
+    price: 100000,                // Base price in CLP
+    icon: 'fa-hammer'             // Font Awesome icon class
+  },
+  // ... more services
+];
+```
+
+### Modifying Existing Services
+
+To change a service, edit its entry in the array:
+
+<Tabs>
+  <Tab title="Change Price">
+    Update the `price` field:
+    
+    ```javascript
+    { 
+      id: 'instalacion', 
+      name: 'Instalación nueva', 
+      desc: 'Primera instalación del equipo', 
+      price: 150000,  // Changed from 100000
+      icon: 'fa-hammer' 
+    }
+    ```
+    
+    This sets the default/base price. Users can still adjust it per-quote in the service selection interface.
+  </Tab>
+  
+  <Tab title="Change Name/Description">
+    Update the `name` and `desc` fields:
+    
+    ```javascript
+    { 
+      id: 'instalacion', 
+      name: 'Instalación profesional',  // New name
+      desc: 'Instalación completa con garantía extendida',  // New description
+      price: 100000, 
+      icon: 'fa-hammer' 
+    }
+    ```
+    
+    These changes appear immediately in the service selection grid.
+  </Tab>
+  
+  <Tab title="Change Icon">
+    Update the `icon` field with any Font Awesome 6 class:
+    
+    ```javascript
+    { 
+      id: 'instalacion', 
+      name: 'Instalación nueva', 
+      desc: 'Primera instalación del equipo', 
+      price: 100000, 
+      icon: 'fa-screwdriver-wrench'  // Changed icon
+    }
+    ```
+    
+    Browse available icons at [fontawesome.com/icons](https://fontawesome.com/icons). Use the free solid icons (prefix `fa-`).
+  </Tab>
+</Tabs>
+
+### Adding New Services
+
+Add a new object to the `SERVICES` array:
+
+```javascript
+const SERVICES = [
+  { id:'instalacion', name:'Instalación nueva', desc:'Primera instalación del equipo', price:100000, icon:'fa-hammer' },
+  { id:'mantencion', name:'Mantención', desc:'Limpieza y revisión general', price:30000, icon:'fa-screwdriver-wrench' },
+  { id:'cambio', name:'Cambio + instalación', desc:'Retiro equipo antiguo + nuevo', price:120000, icon:'fa-arrow-right-arrow-left' },
+  { id:'reparacion', name:'Reparación', desc:'Diagnóstico y reparación de fallas', price:10000, icon:'fa-gear' },
+  { id:'garantia', name:'Visita garantía', desc:'Revisión por garantía vigente', price:0, icon:'fa-shield' },
+  { id:'presupuesto', name:'Solo presupuesto', desc:'Cotización sin instalación', price:0, icon:'fa-clipboard-list' },
+  
+  // NEW SERVICE
+  { 
+    id: 'recarga_gas', 
+    name: 'Recarga de gas', 
+    desc: 'Recarga de refrigerante R410 o R32', 
+    price: 45000, 
+    icon: 'fa-wind' 
+  },
+];
+```
+
+<Warning>
+  **Important**: The `id` must be unique and use only lowercase letters, numbers, and underscores. Avoid spaces and special characters.
+</Warning>
+
+### Multi-Service vs Single-Service
+
+By default, only `instalacion` and `mantencion` support multiple quantities. To enable this for other services, modify the `isMultiService()` function:
+
+```javascript
+// Current implementation (app.js:771-773)
+function isMultiService(id) {
+  return id === 'instalacion' || id === 'mantencion';
+}
+
+// Extended to include new service
+function isMultiService(id) {
+  return id === 'instalacion' || id === 'mantencion' || id === 'recarga_gas';
+}
+```
+
+Multi-services display quantity controls (+/-) and allow adjusting the unit price inline.
+
+### Removing Services
+
+Simply delete the service object from the array:
+
+```javascript
+const SERVICES = [
+  { id:'instalacion', name:'Instalación nueva', desc:'Primera instalación del equipo', price:100000, icon:'fa-hammer' },
+  { id:'mantencion', name:'Mantención', desc:'Limpieza y revisión general', price:30000, icon:'fa-screwdriver-wrench' },
+  // Removed: cambio, reparacion, garantia
+  { id:'presupuesto', name:'Solo presupuesto', desc:'Cotización sin instalación', price:0, icon:'fa-clipboard-list' },
+];
+```
+
+## Customizing PDF Service Content
+
+The PDF includes service-specific information blocks defined in `SERVICE_PDF_CONTENT` (app.js:14-56).
+
+### Content Structure
+
+```javascript
+const SERVICE_PDF_CONTENT = {
+  instalacion: {
+    title: 'Instalación de Aire Acondicionado',
+    relevant: [
+      'Paragraph 1 of relevant information...',
+      'Paragraph 2 of relevant information...',
+      // Each string becomes a paragraph
+    ],
+    extra: [
+      'Additional detail point 1',
+      'Additional detail point 2',
+      // Each string becomes a bullet point
+    ]
+  },
+  // ... more service types
+};
+```
+
+### Modifying Existing Content
+
+Edit the text arrays for any service:
+
+```javascript
+const SERVICE_PDF_CONTENT = {
+  instalacion: {
+    title: 'Instalación Profesional de Climatización',  // Changed title
+    relevant: [
+      'Su empresa es reconocida en la región por excelencia en instalaciones.',  // Custom intro
+      'El servicio incluye instalación completa de unidades split, incluyendo:',
+      '- Montaje de unidad evaporadora interior',
+      '- Instalación de unidad condensadora exterior',
+      '- Conexionado de líneas frigoríficas pre-cargadas',
+      '- Cableado eléctrico y conexión a red',
+      '- Sistema de drenaje de condensados',
+      '- Prueba de funcionamiento y ajuste de parámetros'
+    ],
+    extra: [
+      'Instalación incluye hasta 3 metros de tubería entre unidades.',
+      'Distancias mayores se cotizan según metros adicionales requeridos.',
+      'El cliente debe proveer punto eléctrico certificado.',
+      'Garantía de 2 años en mano de obra (extendido desde 1 año).'
+    ]
+  },
+  // ... other services
+};
+```
+
+### Adding Content for New Services
+
+When you add a new service, add its PDF content:
+
+```javascript
+const SERVICE_PDF_CONTENT = {
+  instalacion: { /* ... */ },
+  mantencion: { /* ... */ },
+  reparacion: { /* ... */ },
+  
+  // Content for new service
+  recarga_gas: {
+    title: 'Recarga de Gas Refrigerante',
+    relevant: [
+      'Servicio de recarga de gas refrigerante para equipos con bajo rendimiento o pérdida de presión.',
+      'Se utiliza refrigerante certificado R410A o R32 según especificaciones del fabricante.',
+      'El servicio incluye:',
+      '- Detección de fugas con equipo especializado',
+      '- Evacuación del sistema si es necesario',
+      '- Recarga precisa según capacidad del equipo',
+      '- Verificación de presiones de trabajo',
+      '- Prueba de funcionamiento post-recarga'
+    ],
+    extra: [
+      'La recarga incluye hasta 1 kg de gas refrigerante.',
+      'Cantidades adicionales se cobran por separado según tarifa vigente.',
+      'Si se detectan fugas importantes, se cotizará la reparación antes de proceder.',
+      'Garantía de 30 días en el servicio de recarga realizado.'
+    ]
+  }
+};
+```
+
+<Note>
+  PDF content is only included for services that have an entry in `SERVICE_PDF_CONTENT`. Services without content (like `presupuesto` or `garantia`) won't show additional sections in the PDF.
+</Note>
+
+### Content Rendering in PDF
+
+The `relevant` and `extra` sections are rendered differently:
+
+- **Relevant**: Each string becomes a paragraph with normal text
+- **Extra**: Each string becomes a bullet point (prefixed with "- ")
+
+The rendering is handled by `appendServiceInfoToPdf()` (app.js:1451-1504).
+
+## Customizing Accessories
+
+Accessories are loaded from Firebase (`accessories` node) or fall back to demo data. To customize:
+
+### Accessory Data Structure
+
+```javascript
+{
+  "id": "kit_can_12_18k",              // Unique identifier
+  "name": "Kit cañería 12K-18K",       // Display name
+  "desc": "Tubería cobre + aislación + cable (5m)",  // Description
+  "price": 45000,                      // Price per unit in CLP
+  "categoria": "cañerias",            // Category (for icon fallback)
+  "color": "#4F6684"                   // Icon background color
+}
+```
+
+### Managing Accessories in Firebase
+
+1. **Access Firebase Console**: Go to your Firebase Realtime Database
+2. **Navigate to accessories node**: `https://your-project.firebaseio.com/accessories`
+3. **Edit JSON directly** or use the Firebase UI to add/modify accessories
+
+**Example Firebase structure:**
+
+```json
+{
+  "accessories": [
+    {
+      "id": "kit_can_9k",
+      "name": "Kit cañería 9K",
+      "desc": "3 metros tubería cobre 1/4 + 3/8",
+      "price": 35000,
+      "categoria": "cañerias",
+      "color": "#4F6684"
+    },
+    {
+      "id": "cordon_25",
+      "name": "Cordón eléctrico 25A",
+      "desc": "Cable 3x2.5mm + enchufe industrial",
+      "price": 18000,
+      "categoria": "electrico",
+      "color": "#C9A84C"
+    },
+    {
+      "id": "kit_drenaje",
+      "name": "Kit drenaje",
+      "desc": "Manguera + accesorios + bomba",
+      "price": 25000,
+      "categoria": "instalacion",
+      "color": "#6FCBB8"
+    }
+  ]
+}
+```
+
+### Customizing Accessory Icons
+
+Accessory icons are defined in `ACC_ICON_MAP` (app.js:914-943):
+
+```javascript
+const ACC_ICON_MAP = {
+  // Icon by specific ID (takes priority)
+  kit_can_9k: 'fa-ruler-combined',
+  kit_can_12_18k: 'fa-ruler-combined',
+  cordon_15: 'fa-bolt',
+  cordon_25: 'fa-bolt',
+  soporte_techo: 'fa-thumbtack',
+  kit_drenaje: 'fa-droplet',
+  breaker_16a: 'fa-plug',
+  
+  // Fallback by category
+  _cat_cañerias: 'fa-ruler-combined',
+  _cat_electrico: 'fa-bolt',
+  _cat_instalacion: 'fa-screwdriver-wrench',
+  _cat_mantencion: 'fa-spray-can-sparkles',
+  _cat_gas: 'fa-temperature-low',
+};
+```
+
+**Adding icon for new accessory:**
+
+```javascript
+const ACC_ICON_MAP = {
+  // Existing mappings...
+  
+  // New accessory
+  soporte_pared: 'fa-grip-vertical',  // Wall mount bracket
+  valvula_servicio: 'fa-gauge',       // Service valve
+  filtro_aire: 'fa-filter',           // Air filter
+  
+  // Category fallbacks remain the same
+  _cat_cañerias: 'fa-ruler-combined',
+  // ...
+};
+```
+
+**Icon resolution order:**
+1. Specific ID match (e.g., `kit_can_9k`)
+2. Category fallback (e.g., `_cat_cañerias` for accessories with `categoria: "cañerias"`)
+3. Default icon (`fa-box`) if no match
+
+Implementation in `getAccIcon()` function (app.js:939-943):
+
+```javascript
+function getAccIcon(acc) {
+  return ACC_ICON_MAP[acc.id]
+    || ACC_ICON_MAP['_cat_' + (acc.categoria || '')]
+    || 'fa-box';
+}
+```
+
+## Branding and Company Information
+
+Customize company branding in multiple locations:
+
+### PDF Header Company Info
+
+Edit the PDF generation function (app.js:1169-1176):
+
+```javascript
+// Current implementation
+doc.setFontSize(20);
+doc.setFont('helvetica', 'bold');
+doc.text('RefriPro Climatización', titleX, titleY);
+
+doc.setTextColor(92, 99, 112);
+doc.setFontSize(8);
+doc.setFont('helvetica', 'normal');
+doc.text('"Controlamos el Clima"', titleX, subtitleY);
+```
+
+**Customize to your company:**
+
+```javascript
+doc.setFontSize(20);
+doc.setFont('helvetica', 'bold');
+doc.text('Mi Empresa Clima', titleX, titleY);  // Your company name
+
+doc.setTextColor(92, 99, 112);
+doc.setFontSize(8);
+doc.setFont('helvetica', 'normal');
+doc.text('"Su socio en climatización"', titleX, subtitleY);  // Your tagline
+```
+
+### PDF Footer Branding
+
+Edit the footer section (app.js:1376-1380):
+
+```javascript
+// Current implementation
+doc.setFontSize(7.5);
+doc.setFont('helvetica', 'normal');
+doc.setTextColor(226, 229, 235);
+doc.text('RefriPro · Generado con CotizaClima App', margin + 4, pageH - 9);
+```
+
+**Customize:**
+
+```javascript
+doc.text('Mi Empresa Clima · Tel: +56 9 XXXX XXXX · www.miempresa.cl', margin + 4, pageH - 9);
+```
+
+### PDF Logo
+
+The logo is defined as a base64-encoded PNG in `PDF_LOGO_BASE64` constant (app.js:1392):
+
+```javascript
+const PDF_LOGO_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAB9AAAAZuCAYAAAAcj73IAAEAAElEQVR42uz9e6xtSX...';
+```
+
+**To change the logo:**
+
+1. **Prepare your logo**:
+   - Format: PNG (transparent background recommended)
+   - Size: 200x200 pixels or similar square ratio
+   - Keep file size reasonable (under 100KB)
+
+2. **Convert to base64**:
+   - Online tool: [base64-image.de](https://www.base64-image.de/)
+   - Command line: `base64 -i logo.png`
+   - Node.js: `fs.readFileSync('logo.png', 'base64')`
+
+3. **Replace the constant**:
+   ```javascript
+   // Option 1: Base64 string only
+   const PDF_LOGO_BASE64 = 'iVBORw0KGgoAAAANSUhEUg...';
+   
+   // Option 2: Full data URL
+   const PDF_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg...';
+   ```
+
+4. The `normalizePngDataUrl()` function (app.js:1394-1408) handles both formats automatically.
+
+<Tip>
+  Use an optimized PNG with transparency. Tools like [TinyPNG](https://tinypng.com/) can reduce file size while maintaining quality.
+</Tip>
+
+### App Header Logo and Title
+
+Edit the header in `index.html` (lines 19-22):
+
+```html
+<!-- Current implementation -->
+<div class="logo">
+  <div class="logo-icon"><i class="fas fa-snowflake"></i></div>
+  <div class="logo-text">Cotiza<span>Clima</span></div>
+</div>
+```
+
+**Customize:**
+
+```html
+<div class="logo">
+  <div class="logo-icon"><i class="fas fa-wind"></i></div>  <!-- Different icon -->
+  <div class="logo-text">Mi<span>Empresa</span></div>  <!-- Your company name -->
+</div>
+```
+
+Or use an image logo:
+
+```html
+<div class="logo">
+  <img src="assets/img/mi-logo.png" alt="Mi Empresa" style="height:32px;">
+  <div class="logo-text">Clima</div>
+</div>
+```
+
+## Firebase Configuration
+
+Firebase connection is configured in `FIREBASE_CONNECTION` object (app.js:64-68):
+
+```javascript
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',  // Equipment data node
+  authToken: ''               // Optional auth token for read access
+};
+```
+
+### Changing Firebase Project
+
+1. **Create new Firebase project** at [console.firebase.google.com](https://console.firebase.google.com)
+2. **Enable Realtime Database**
+3. **Configure database rules**:
+   ```json
+   {
+     "rules": {
+       "air_conditioners": {
+         ".read": true,
+         ".write": false
+       },
+       "accessories": {
+         ".read": true,
+         ".write": false
+       },
+       "users": {
+         "$uid": {
+           ".read": "auth.uid === $uid",
+           ".write": "auth.uid === $uid"
+         }
+       }
+     }
+   }
+   ```
+4. **Update configuration**:
+   ```javascript
+   const FIREBASE_CONNECTION = {
+     databaseURL: 'https://your-project-default-rtdb.firebaseio.com/',
+     node: 'air_conditioners',
+     authToken: ''
+   };
+   ```
+
+5. **Configure Firebase Authentication** in `firebase-auth.js`:
+   ```javascript
+   const FIREBASE_API_KEY = 'your-api-key';
+   const FIREBASE_AUTH_DOMAIN = 'your-project.firebaseapp.com';
+   ```
+
+### Firebase REST API Base URL
+
+If you need to change the REST API endpoint, update constants in:
+
+- `quotes-repo.js`: `FIREBASE_REST_API_BASE_URL`
+- `client-repo.js`: `FIREBASE_REST_API_BASE_URL`
+- `ranking-repo.js`: `FIREBASE_REST_API_BASE_URL`
+
+```javascript
+const FIREBASE_REST_API_BASE_URL = 'https://your-project-default-rtdb.firebaseio.com';
+```
+
+## Equipment Data Customization
+
+Equipment is loaded from Firebase. To customize:
+
+### Managing Equipment in Firebase
+
+1. Navigate to `{databaseURL}/air_conditioners` in Firebase Console
+2. Edit the JSON array directly
+3. Each equipment object should follow this structure:
+
+```json
+{
+  "marca": "LG",
+  "brand_model": "DUAL Inverter S4-W09JA3AA",
+  "type": "Split Muro",
+  "refrigerant": "R32",
+  "wifi": "Yes",
+  "warranty": "3 years compressor",
+  "installation_kit": "Completo",
+  "capacities": [
+    {
+      "btu_capacity": 9000,
+      "net_price": 189900,
+      "price_with_tax": 226101
+    },
+    {
+      "btu_capacity": 12000,
+      "net_price": 219900,
+      "price_with_tax": 261681
+    }
+  ]
+}
+```
+
+### Brand Logo Icons
+
+Brand logos are loaded from `assets/img/` directory. The system automatically searches for matching files:
+
+```javascript
+// Brand icon configuration (app.js:70-80)
+const BRAND_ICON_DIR = 'assets/img';
+const BRAND_ICON_EXTENSIONS = ['svg', 'png', 'webp', 'jpg', 'jpeg'];
+const BRAND_ICON_OVERRIDES = {
+  daitsu: ['daitsu'],
+  ika: ['ika'],
+  kendal: ['kendal'],
+  lg: ['lg'],
+  midea: ['midea'],
+  tcl: ['tcl'],
+  clark: ['clark']
+};
+```
+
+**To add brand logo:**
+
+1. Save logo as `assets/img/{brand}.svg` (or .png, .webp, etc.)
+2. Brand name is auto-normalized: "Samsung" → "samsung.svg"
+3. For special cases, add override:
+   ```javascript
+   const BRAND_ICON_OVERRIDES = {
+     // Existing brands...
+     'lg electronics': ['lg'],  // Multiple names map to 'lg'
+     'samsung': ['samsung', 'samsung-electronics'],
+   };
+   ```
+
+**Logo search order:**
+1. Check `{brand}.svg` in assets/img/
+2. Check `{brand}.png`, `{brand}.webp`, etc.
+3. Use overrides if specified
+4. If all fail, logo is hidden (no broken image)
+
+## Quote Number Format
+
+Customize the quote number format by modifying these functions:
+
+### Format Pattern
+
+Current format: `CL-YYYY-####`
+
+To change to a different pattern:
+
+```javascript
+// Current implementation (app.js:378-380)
+function buildQuoteNumber(datePart, sequence) {
+  return `CL-${datePart}-${String(Math.max(1, Number(sequence) || 1)).padStart(4, '0')}`;
+}
+
+// Custom format examples:
+
+// Format: ABC-001234 (no year)
+function buildQuoteNumber(datePart, sequence) {
+  return `ABC-${String(Math.max(1, Number(sequence) || 1)).padStart(6, '0')}`;
+}
+
+// Format: 2026/0001 (slash separator)
+function buildQuoteNumber(datePart, sequence) {
+  return `${datePart}/${String(Math.max(1, Number(sequence) || 1)).padStart(4, '0')}`;
+}
+
+// Format: Q-20260001 (year + sequence combined)
+function buildQuoteNumber(datePart, sequence) {
+  return `Q-${datePart}${String(Math.max(1, Number(sequence) || 1)).padStart(4, '0')}`;
+}
+```
+
+<Warning>
+  If you change the quote number format, you must also update the parsing functions:
+  - `parseQuoteSequence()` in app.js
+  - `getQuoteYearFromNumber()` in quotes.js
+  - `parseQuoteSequenceByYear()` in quotes.js
+  
+  Otherwise, quote duplication and history features won't work correctly.
+</Warning>
+
+### Year Part
+
+Currently uses 4-digit year. To use year-month:
+
+```javascript
+// Current implementation (app.js:374-376)
+function getQuoteDatePart(date = new Date()) {
+  return String(date.getFullYear());
+}
+
+// Custom: Use YYYYMM format
+function getQuoteDatePart(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}${month}`;
+}
+// Results in: CL-202603-0001 for March 2026
+```
+
+## Styling and Theme
+
+Customize colors, fonts, and overall appearance by editing `styles.css`.
+
+### Color Scheme
+
+Main colors are defined as CSS custom properties:
+
+```css
+:root {
+  --primary: #4F6684;      /* Main brand color */
+  --accent: #C9A84C;       /* Accent/highlight color */
+  --bg: #F8F9FB;           /* Background */
+  --text: #1F2937;         /* Primary text */
+  --text-dim: #6B7280;     /* Secondary text */
+  --border: #E5E7EB;       /* Borders */
+  --red: #DC2626;          /* Danger/delete */
+  --green: #059669;        /* Success */
+}
+```
+
+**To change theme colors**, update these variables and the app will automatically adjust.
+
+### Font Family
+
+The app uses three font families:
+
+```css
+/* In HTML head */
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Lato:wght@300;400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+/* In CSS */
+family=Cormorant+Garamond  /* Headings */
+family=Lato                /* Body text */
+family=DM+Mono             /* Numbers, quotes */
+```
+
+To use different fonts:
+
+1. Import from Google Fonts or host locally
+2. Update CSS font-family declarations
+3. Update PDF font (jsPDF uses 'helvetica' by default)
+
+## Adding Custom Fields
+
+To add new fields to quotes:
+
+### 1. Add HTML Input
+
+Edit `index.html` in the client section (around line 160-230):
+
+```html
+<div class="form-group">
+  <label class="form-label">Campo Nuevo</label>
+  <input type="text" class="form-input" id="clientNewField" placeholder="Descripción">
+</div>
+```
+
+### 2. Update Client Snapshot
+
+Edit `getClientSnapshot()` in app.js:
+
+```javascript
+function getClientSnapshot() {
+  return {
+    name: document.getElementById('clientName').value || '',
+    rut: document.getElementById('clientRut').value || '',
+    // ... existing fields ...
+    newField: document.getElementById('clientNewField').value || '',  // NEW
+  };
+}
+```
+
+### 3. Update Import Function
+
+Edit `importQuoteSnapshot()` in app.js:
+
+```javascript
+function importQuoteSnapshot(snapshot) {
+  // ... existing code ...
+  
+  setVal('clientName', client.name || '');
+  setVal('clientRut', client.rut || '');
+  // ... existing fields ...
+  setVal('clientNewField', client.newField || '');  // NEW
+}
+```
+
+### 4. Update PDF Generation
+
+Edit the client section in `generatePDF()` (app.js around line 1188-1217):
+
+```javascript
+const clientData = [
+  ['Nombre', clientName],
+  ...(clientRut ? [['RUT', clientRut]] : []),
+  ['Teléfono', clientPhone],
+  // ... existing fields ...
+  ...(clientNewField ? [['Campo Nuevo', clientNewField]] : []),  // NEW
+];
+```
+
+### 5. Update Summary Display
+
+Edit `buildSummary()` in app.js to show the field in step 5 summary.
+
+<Accordion title="Example: Adding 'Referido por' field">
+  **1. HTML (index.html):**
+  ```html
+  <div class="form-group">
+    <label class="form-label">Referido por</label>
+    <input type="text" class="form-input" id="clientReferredBy" 
+      placeholder="¿Quién lo refirió a nosotros?">
+  </div>
+  ```
+  
+  **2. Client snapshot (app.js):**
+  ```javascript
+  function getClientSnapshot() {
+    return {
+      // ... existing fields ...
+      referredBy: document.getElementById('clientReferredBy').value || ''
+    };
+  }
+  ```
+  
+  **3. Import (app.js):**
+  ```javascript
+  setVal('clientReferredBy', client.referredBy || '');
+  ```
+  
+  **4. PDF (app.js):**
+  ```javascript
+  const referredBy = document.getElementById('clientReferredBy').value || '';
+  const clientData = [
+    ['Nombre', clientName],
+    ['Teléfono', clientPhone],
+    ...(referredBy ? [['Referido por', referredBy]] : []),
+  ];
+  ```
+  
+  **5. Summary (app.js):**
+  ```javascript
+  const referredBy = document.getElementById('clientReferredBy').value || '';
+  if (referredBy) {
+    document.getElementById('sumReferredBy').textContent = referredBy;
+  }
+  ```
+</Accordion>
+
+<Card title="Need Help?" icon="question">
+  For advanced customization or integration questions, refer to:
+  - [Creating Quotes](/guides/creating-quotes) for workflow details
+  - [Managing Clients](/guides/managing-clients) for data structure
+  - [Quote History](/guides/quote-history) for storage and retrieval
+</Card>

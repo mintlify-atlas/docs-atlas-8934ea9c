@@ -1,0 +1,614 @@
+---
+title: Managing Clients
+description: How to use the client directory, search clients, and view quote history per customer
+---
+
+CotizaClima automatically builds a client database when you save quotes with customer RUT information. The client management interface provides quick access to customer details and their quote history.
+
+## Accessing the Client Directory
+
+The client directory is available at `clients.html` and requires Firebase authentication.
+
+### Navigation
+
+From the main quote editor (`index.html`):
+
+1. Click the **hamburger menu** (three lines) in the top-right corner
+2. Click **Ver clientes** (View clients)
+3. Sign in if not already authenticated
+
+Alternatively, navigate directly to `clients.html` in your browser.
+
+<Note>
+  The client directory requires a valid Firebase Authentication session. You'll be redirected to the login screen if not authenticated.
+</Note>
+
+## Client Directory Interface
+
+The client directory interface is defined in `clients.html` with the following structure:
+
+```html
+<!-- Header with navigation (clients.html:15-25) -->
+<div class="quotes-topbar">
+  <div>
+    <h1 class="quotes-title">Clientes</h1>
+    <p class="quotes-sub">Consulta clientes guardados y sus cotizaciones asociadas.</p>
+  </div>
+  <div class="quotes-actions">
+    <button id="btnBackApp" class="quotes-btn secondary">Volver a la app</button>
+    <button id="btnBackHistory" class="quotes-btn secondary">Historial</button>
+    <button id="btnLogout" class="quotes-btn danger">Cerrar sesión</button>
+  </div>
+</div>
+
+<!-- Search bar (clients.html:29-32) -->
+<div class="clients-search-bar">
+  <input id="clientsSearchInput" class="quotes-input clients-search-input" 
+    type="search" placeholder="Buscar por nombre o RUT...">
+</div>
+
+<!-- Client list container (clients.html:34-36) -->
+<section id="clientsListCard" class="list-card">
+  <div id="clientList" class="client-list"></div>
+</section>
+```
+
+### Navigation Buttons
+
+- **Volver a la app**: Returns to main quote editor
+- **Historial**: Opens quote history page
+- **Cerrar sesión**: Signs out of Firebase Authentication
+
+## How Clients are Created
+
+Clients are automatically created or updated when you save a quote containing a **RUT** (Chilean tax ID).
+
+### Client Data Structure
+
+Clients are stored in Firebase under `users/{uid}/clients/{clientRutKey}` with this structure:
+
+```javascript
+{
+  "id": "12345678-9",           // RUT as identifier
+  "rutKey": "123456789",        // RUT without formatting (used as key)
+  "name": "Juan Pérez González",
+  "rut": "12.345.678-9",
+  "phone": "+56 9 1234 5678",
+  "email": "juan@example.cl",
+  "address": "Av. Principal 123",
+  "city": "Curicó",
+  "region": "Maule",
+  "property": "Casa",
+  "notes": "Piso 2, acceso por escalera",
+  "quoteIds": {
+    "quote-id-1": true,
+    "quote-id-2": true
+  },
+  "createdAt": 1234567890123,
+  "updatedAt": 1234567890456
+}
+```
+
+### Client Creation Logic
+
+Client creation is handled by `ClientRepo.saveOrUpdateClient()` in `client-repo.js`:
+
+```javascript
+// Client repository (client-repo.js:34-73)
+async function saveOrUpdateClient(userId, idToken, clientData, quoteId) {
+  // 1. Validate RUT presence
+  const rut = (clientData.rut || '').trim();
+  if (!rut) return null; // No RUT = no client record
+  
+  // 2. Normalize RUT for use as key
+  const rutKey = normalizeRutKey(rut); // Remove dots and hyphens
+  
+  // 3. Build client object
+  const client = {
+    id: rut,
+    rutKey: rutKey,
+    name: clientData.name || '',
+    rut: rut,
+    phone: clientData.phone || '',
+    email: clientData.email || '',
+    address: clientData.address || '',
+    city: clientData.city || '',
+    region: clientData.region || '',
+    property: clientData.property || '',
+    notes: clientData.notes || '',
+    quoteIds: { [quoteId]: true },
+    updatedAt: Date.now()
+  };
+  
+  // 4. Check if client exists
+  const existing = await getClient(userId, idToken, rutKey);
+  if (existing) {
+    // Merge quote IDs
+    client.quoteIds = { ...existing.quoteIds, [quoteId]: true };
+    client.createdAt = existing.createdAt;
+  } else {
+    client.createdAt = Date.now();
+  }
+  
+  // 5. Save to Firebase
+  const endpoint = `${FIREBASE_REST_API_BASE_URL}/users/${userId}/clients/${rutKey}.json?auth=${idToken}`;
+  await fetch(endpoint, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(client)
+  });
+  
+  return client;
+}
+```
+
+<Tip>
+  **Best Practice**: Always ask for the client's RUT when creating quotes. This enables automatic client tracking and makes it easy to find all quotes for a specific customer.
+</Tip>
+
+## Searching Clients
+
+The search bar at the top filters clients in real-time as you type.
+
+### Search Implementation
+
+```javascript
+// Client filtering (clients.html:151-174)
+function renderFiltered(query) {
+  const q = (query || '').trim().toLowerCase();
+  
+  const filtered = q
+    ? allClients.filter(function(c) {
+        return (c.name || '').toLowerCase().indexOf(q) !== -1 ||
+               (c.rut || '').toLowerCase().indexOf(q) !== -1 ||
+               (c.rutKey || '').toLowerCase().indexOf(q) !== -1;
+      })
+    : allClients;
+  
+  // Render filtered results
+  const container = document.getElementById('clientList');
+  container.innerHTML = filtered
+    .map(function(c) { return renderClientCard(c, quotesByClientId[c.id] || []); })
+    .join('');
+}
+```
+
+### Search Fields
+
+The search matches against:
+
+- **Client name**: Full name (case-insensitive)
+- **RUT**: Formatted RUT (e.g., "12.345.678-9")
+- **RUT key**: Normalized RUT without formatting (e.g., "123456789")
+
+**Examples:**
+- Search "juan" → finds "Juan Pérez"
+- Search "12345" → finds RUT "12.345.678-9"
+- Search "1234" → finds all RUTs starting with 1234
+
+<Note>
+  Search is case-insensitive and matches partial strings. You don't need to type the full name or RUT.
+</Note>
+
+## Client Card Display
+
+Each client is displayed as an expandable card showing:
+
+### Card Header
+
+```javascript
+// Client card rendering (clients.html:106-145)
+function renderClientCard(client, clientQuotes) {
+  const count = clientQuotes.length;
+  const countLabel = count === 1 ? '1 cotización' : (count + ' cotizaciones');
+  
+  return `
+    <div class="client-card" data-client-id="${client.id}">
+      <div class="client-card-header">
+        <!-- Client info -->
+        <div class="client-card-info">
+          <div class="client-card-name">${client.name || 'Sin nombre'}</div>
+          <div class="client-card-rut">${client.rut || 'Sin RUT'}</div>
+          <div class="client-card-details">
+            ${phoneHtml}    <!-- Phone if available -->
+            ${emailHtml}    <!-- Email if available -->
+            ${locationHtml} <!-- City, Region if available -->
+          </div>
+          <div class="client-card-actions">
+            ${callBtnCard}  <!-- Phone call button -->
+            ${wazeBtnCard}  <!-- Waze navigation button -->
+          </div>
+        </div>
+        
+        <!-- Toggle button -->
+        <button class="client-toggle-btn" data-client-id="${client.id}">
+          <span class="client-quote-count">${countLabel}</span>
+          <span class="client-toggle-icon">&#9660;</span> <!-- Down arrow -->
+        </button>
+      </div>
+      
+      <!-- Hidden quotes panel (expanded on click) -->
+      <div class="client-quotes-list hidden" data-quotes-for="${client.id}">
+        <div class="quote-list">${quotesHtml}</div>
+      </div>
+    </div>
+  `;
+}
+```
+
+**Header Information:**
+- **Name**: Client's full name
+- **RUT**: Formatted Chilean tax ID
+- **Contact details**: Phone, email (if provided)
+- **Location**: City and region (if provided)
+- **Quote count**: Number of quotes associated with this client
+
+### Quick Actions
+
+Each client card includes action buttons:
+
+<Tabs>
+  <Tab title="Phone Call">
+    If the client has a phone number, a phone icon button appears:
+    
+    ```html
+    <a class="quotes-btn secondary icon-btn" 
+       href="tel:+56912345678" 
+       title="Llamar a Juan Pérez">
+      <i class="fas fa-phone"></i>
+    </a>
+    ```
+    
+    - **Desktop**: Opens default phone app or shows prompt
+    - **Mobile**: Initiates call directly
+    - Spaces are removed from phone number for compatibility
+  </Tab>
+  
+  <Tab title="Waze Navigation">
+    If the client has an address, a route icon button appears:
+    
+    ```javascript
+    // Waze URL generation (clients.html:73-77)
+    function buildWazeUrl(obj) {
+      var parts = [obj.address, obj.city, obj.region].filter(Boolean);
+      if (!parts.length) return '';
+      return 'https://waze.com/ul?q=' + encodeURIComponent(parts.join(', ')) + '&navigate=yes';
+    }
+    ```
+    
+    ```html
+    <a class="quotes-btn secondary icon-btn" 
+       href="https://waze.com/ul?q=Av.+Principal+123,+Curicó,+Maule&navigate=yes"
+       target="_blank" 
+       rel="noopener noreferrer" 
+       title="Navegar con Waze">
+      <i class="fas fa-route"></i>
+    </a>
+    ```
+    
+    - Opens Waze app or web version
+    - Pre-fills destination from address, city, and region
+    - Automatically starts navigation mode
+  </Tab>
+</Tabs>
+
+## Viewing Client Quote History
+
+### Expanding Client Quotes
+
+Click anywhere on the client card or the quote count button to expand the quotes panel:
+
+```javascript
+// Toggle accordion (clients.html:240-252)
+var toggleBtn = evt.target.closest('button[data-client-id]');
+if (toggleBtn) {
+  var clientId = toggleBtn.dataset.clientId;
+  var panel = document.querySelector('[data-quotes-for="' + clientId + '"]');
+  if (panel) {
+    var isOpen = !panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', isOpen);
+    
+    // Update icon
+    var icon = toggleBtn.querySelector('.client-toggle-icon');
+    if (icon) icon.innerHTML = isOpen ? '&#9660;' : '&#9650;'; // Down/up arrow
+    
+    toggleBtn.setAttribute('aria-expanded', String(!isOpen));
+  }
+}
+```
+
+The panel shows all quotes associated with this client, sorted by most recent first.
+
+### Quote Item Display
+
+Each quote in the client's history shows:
+
+```javascript
+// Quote row rendering (clients.html:79-104)
+function renderQuoteRow(q) {
+  var total = (q.pricing && q.pricing.total) ? ('$' + fmtNum(q.pricing.total)) : '$0';
+  var date = q.updatedAt ? new Date(q.updatedAt).toLocaleDateString('es-CL') : '-';
+  var client = q.client || {};
+  
+  return `
+    <div class="quote-item">
+      <div class="quote-head">
+        <div>
+          <div class="quote-num">${q.quoteNumber || q.id}</div>
+          <div class="quote-meta">${date} · ${statusLabel(q.status)}</div>
+        </div>
+        <div class="quote-total">${total}</div>
+      </div>
+      <div class="quote-actions">
+        <button class="quotes-btn" data-action="open" data-id="${q.id}">
+          Abrir y editar
+        </button>
+        ${callBtn}  <!-- Phone button for this quote's client -->
+        ${wazeBtn}  <!-- Waze button for this quote's address -->
+      </div>
+    </div>
+  `;
+}
+```
+
+**Quote Information:**
+- **Quote number**: e.g., "CL-2026-0001"
+- **Date**: Last updated date in Chilean locale
+- **Status**: "Emitida" (issued) or "Borrador" (draft)
+- **Total**: Quote grand total with discount applied
+
+### Quote Actions
+
+**Abrir y editar** (Open and edit):
+
+```javascript
+// Open quote for editing (clients.html:227-237)
+var openBtn = evt.target.closest('button[data-action="open"]');
+if (openBtn) {
+  var id = openBtn.dataset.id;
+  var quote = quoteById[id];
+  if (quote) {
+    // Save to session storage and redirect to editor
+    navigateToEditorWithQuote(quote);
+  }
+}
+
+function navigateToEditorWithQuote(quote) {
+  sessionStorage.setItem('cotiz_pending_quote_v1', JSON.stringify({ quote: quote }));
+  window.location.href = 'index.html';
+}
+```
+
+1. Stores quote data in `sessionStorage`
+2. Redirects to main editor (`index.html`)
+3. Editor auto-loads quote on page load (handled by `quote-persistence.js`)
+4. All fields are pre-filled for editing
+5. You can modify and re-save or generate a new PDF
+
+<Note>
+  Opening a quote from the client directory loads it into the editor exactly as saved. You can edit any field, update pricing, or regenerate the PDF.
+</Note>
+
+## Client Data Synchronization
+
+### Loading Clients
+
+Clients and their quotes are loaded in parallel on page load:
+
+```javascript
+// Bootstrap function (clients.html:176-224)
+async function bootstrap() {
+  // 1. Check authentication
+  var user = window.FirebaseAuthService.getCurrentUser();
+  var idToken = await window.FirebaseAuthService.getValidIdToken();
+  if (!user || !idToken) {
+    window.location.href = 'index.html';
+    return;
+  }
+  
+  // 2. Load clients and quotes in parallel
+  try {
+    var results = await Promise.all([
+      window.ClientRepo.listClients(user.uid, idToken),
+      window.QuotesRepo.listQuotes(user.uid, idToken)
+    ]);
+    
+    var clients = results[0] || [];
+    var quotes = results[1] || [];
+    
+    // 3. Build lookup maps
+    quoteById = {};
+    quotes.forEach(function(q) { quoteById[q.id] = q; });
+    
+    // 4. Group quotes by clientId
+    quotesByClientId = {};
+    clients.forEach(function(c) {
+      var ids = Object.keys(c.quoteIds || {});
+      quotesByClientId[c.id] = ids
+        .map(function(id) { return quoteById[id]; })
+        .filter(Boolean)
+        .sort(function(a, b) { 
+          return Number(b.updatedAt || 0) - Number(a.updatedAt || 0); 
+        });
+    });
+    
+    allClients = clients;
+    renderFiltered('');
+  } catch (e) {
+    showStatus('Error al cargar clientes: ' + (e.message || 'Error desconocido.'), true);
+  }
+}
+```
+
+### Data Flow
+
+1. **User saves quote** with RUT → `quote-persistence.js` calls `ClientRepo.saveOrUpdateClient()`
+2. **Client record created/updated** in Firebase → `users/{uid}/clients/{rutKey}`
+3. **Quote ID added** to client's `quoteIds` map
+4. **Client directory loads** → Fetches all clients and quotes
+5. **Quotes grouped** by client ID for display
+
+### Firebase Structure
+
+```
+firebase-database/
+  users/
+    {userId}/
+      clients/
+        {rutKey}/           # e.g., "123456789"
+          id: "12.345.678-9"
+          name: "Juan Pérez"
+          phone: "+56 9 1234 5678"
+          quoteIds:
+            "quote-abc123": true
+            "quote-def456": true
+          ...
+      quotes/
+        {quoteId}/          # e.g., "quote-abc123"
+          quoteNumber: "CL-2026-0001"
+          client:
+            name: "Juan Pérez"
+            rut: "12.345.678-9"
+            ...
+          ...
+```
+
+<Accordion title="Why use RUT as the client key?">
+  The RUT (Rol Único Tributario) is Chile's unique tax identification number. Using it as the client key ensures:
+  
+  - **No duplicates**: Each client has exactly one record
+  - **Automatic updates**: Saving a quote with the same RUT updates existing client info
+  - **Easy lookup**: Search by RUT is instant (indexed by key)
+  - **Standard format**: Normalized key (`rutKey`) handles formatting variations
+  
+  If a quote doesn't have a RUT, no client record is created, but the quote is still saved normally.
+</Accordion>
+
+## Empty States
+
+### No Clients
+
+If no clients exist (no quotes saved with RUT):
+
+```html
+<div class="quote-item" style="font-size:13px;color:#6a655e;text-align:center;padding:16px;">
+  No hay clientes guardados aún. Los clientes se guardan cuando guardas una cotización con RUT del cliente.
+</div>
+```
+
+### No Search Results
+
+If search query returns no matches:
+
+```html
+<div class="quote-item" style="font-size:13px;color:#6a655e;text-align:center;padding:16px;">
+  Sin resultados para "juan perez".
+</div>
+```
+
+### Client with No Quotes
+
+If a client exists but has no associated quotes (shouldn't happen normally):
+
+```html
+<div class="quote-item" style="font-size:12px;color:#6a655e;text-align:center;padding:14px;">
+  Sin cotizaciones guardadas.
+</div>
+```
+
+## Client Repository API
+
+The client management functionality is provided by `ClientRepo` in `client-repo.js`:
+
+### Methods
+
+<Tabs>
+  <Tab title="listClients">
+    ```javascript
+    // Fetch all clients for a user
+    async function listClients(userId, idToken) {
+      const endpoint = `${FIREBASE_REST_API_BASE_URL}/users/${userId}/clients.json?auth=${idToken}`;
+      const response = await fetch(endpoint);
+      const data = await response.json();
+      
+      if (!data) return [];
+      
+      // Convert Firebase object to array
+      return Object.entries(data).map(([key, client]) => ({
+        ...client,
+        id: client.id || key
+      }));
+    }
+    ```
+    
+    Returns array of client objects sorted by creation date (newest first).
+  </Tab>
+  
+  <Tab title="getClient">
+    ```javascript
+    // Fetch single client by RUT key
+    async function getClient(userId, idToken, rutKey) {
+      const endpoint = `${FIREBASE_REST_API_BASE_URL}/users/${userId}/clients/${rutKey}.json?auth=${idToken}`;
+      const response = await fetch(endpoint);
+      return await response.json();
+    }
+    ```
+    
+    Returns client object or `null` if not found.
+  </Tab>
+  
+  <Tab title="saveOrUpdateClient">
+    ```javascript
+    // Create or update client record
+    async function saveOrUpdateClient(userId, idToken, clientData, quoteId) {
+      const rut = (clientData.rut || '').trim();
+      if (!rut) return null;
+      
+      const rutKey = normalizeRutKey(rut);
+      const existing = await getClient(userId, idToken, rutKey);
+      
+      const client = {
+        ...clientData,
+        rutKey,
+        quoteIds: existing 
+          ? { ...existing.quoteIds, [quoteId]: true }
+          : { [quoteId]: true },
+        updatedAt: Date.now(),
+        createdAt: existing ? existing.createdAt : Date.now()
+      };
+      
+      const endpoint = `${FIREBASE_REST_API_BASE_URL}/users/${userId}/clients/${rutKey}.json?auth=${idToken}`;
+      await fetch(endpoint, {
+        method: 'PUT',
+        body: JSON.stringify(client)
+      });
+      
+      return client;
+    }
+    ```
+    
+    Returns updated client object. Called automatically when saving quotes.
+  </Tab>
+  
+  <Tab title="normalizeRutKey">
+    ```javascript
+    // Normalize RUT for use as Firebase key
+    function normalizeRutKey(rut) {
+      return String(rut || '')
+        .replace(/[^0-9kK]/g, '') // Remove dots, hyphens, spaces
+        .toLowerCase();            // Lowercase K
+    }
+    ```
+    
+    Examples:
+    - `"12.345.678-9"` → `"123456789"`
+    - `"12345678-K"` → `"12345678k"`
+    - `"12 345 678-9"` → `"123456789"`
+  </Tab>
+</Tabs>
+
+<Card title="Related Topics" icon="link">
+  - [Creating Quotes](/guides/creating-quotes) - Learn how client data is captured
+  - [Quote History](/guides/quote-history) - Manage saved quotes
+  - [Customization](/guides/customization) - Customize client fields and requirements
+</Card>

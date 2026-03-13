@@ -1,0 +1,386 @@
+---
+title: 'App State'
+description: 'Global state variables in CotizaClima application'
+icon: 'database'
+---
+
+## Overview
+
+CotizaClima uses global state variables to manage the application state. These variables are defined at the top level of `app.js` and track equipment selection, services, accessories, and UI state.
+
+## Equipment State
+
+### allAC
+
+Complete list of air conditioner equipment loaded from Firebase or demo data.
+
+<ResponseField name="type" type="array">
+  Array of AC equipment objects with properties: `marca`, `brand_model`, `type`, `refrigerant`, `wifi`, `warranty`, `installation_kit`, `capacities`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let allAC = [];
+```
+
+```javascript Usage Example
+// Access all equipment
+console.log(`Total equipment: ${allAC.length}`);
+
+// Find specific brand
+const lgEquipment = allAC.filter(ac => ac.marca === 'LG');
+
+// Get equipment at index
+const ac = allAC[0];
+console.log(ac.brand_model);
+console.log(ac.capacities); // Array of BTU capacities
+```
+</CodeGroup>
+
+### selectedAC
+
+Index of the currently selected/last selected AC equipment.
+
+<ResponseField name="type" type="number | null">
+  Index into `allAC` array, or `null` if no selection
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let selectedAC = null;
+```
+
+```javascript Usage Example
+if (selectedAC !== null) {
+  const ac = allAC[selectedAC];
+  console.log('Selected:', ac.brand_model);
+}
+```
+</CodeGroup>
+
+### selectedEquipments
+
+Map of selected equipment items with quantities. Keys are composite strings of format `"index__btu"`.
+
+<ResponseField name="type" type="object">
+  Object with keys like `"5__12000"` (index 5, 12000 BTU) and quantity values
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let selectedEquipments = {};
+```
+
+```javascript Usage Example
+// Check if specific equipment/BTU is selected
+const key = equipKey(3, 18000); // "3__18000"
+const qty = selectedEquipments[key] || 0;
+
+console.log(`Quantity: ${qty}`);
+
+// Iterate all selections
+Object.entries(selectedEquipments).forEach(([key, qty]) => {
+  const [idx, btu] = key.split('__');
+  console.log(`AC ${idx} with ${btu} BTU: ${qty} units`);
+});
+```
+</CodeGroup>
+
+---
+
+## Service State
+
+### selectedService
+
+Currently selected single-instance service (e.g., `'reparacion'`, `'garantia'`, `'presupuesto'`).
+
+<ResponseField name="type" type="string | null">
+  Service ID or `null` if none selected
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let selectedService = null;
+```
+
+```javascript Usage Example
+if (selectedService === 'reparacion') {
+  console.log('Repair service selected');
+}
+```
+</CodeGroup>
+
+### serviceQtyMap
+
+Quantities for multi-instance services (`instalacion`, `mantencion`).
+
+<ResponseField name="type" type="object">
+  Object with keys: `instalacion` (number), `mantencion` (number)
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let serviceQtyMap = { instalacion: 0, mantencion: 0 };
+```
+
+```javascript Usage Example
+// Check installation quantity
+const installQty = serviceQtyMap.instalacion || 0;
+console.log(`Installations: ${installQty}`);
+
+// Set maintenance quantity
+serviceQtyMap.mantencion = 3;
+```
+</CodeGroup>
+
+### instalacionUnitValue
+
+Price per installation service unit (in CLP).
+
+<ResponseField name="type" type="number">
+  Default: `100000`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let instalacionUnitValue = 100000;
+```
+</CodeGroup>
+
+### mantencionUnitValue
+
+Price per maintenance service unit (in CLP).
+
+<ResponseField name="type" type="number">
+  Default: `30000`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let mantencionUnitValue = 30000;
+```
+</CodeGroup>
+
+### repairQty
+
+Quantity for repair service.
+
+<ResponseField name="type" type="number">
+  Default: `1`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let repairQty = 1;
+```
+</CodeGroup>
+
+### repairUnitValue
+
+Price per repair service unit (in CLP).
+
+<ResponseField name="type" type="number">
+  Default: `10000`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let repairUnitValue = 10000;
+```
+</CodeGroup>
+
+---
+
+## Accessory State
+
+### accQty
+
+Quantities of selected accessories by ID.
+
+<ResponseField name="type" type="object">
+  Object with accessory IDs as keys and quantities as values
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let accQty = {};
+```
+
+```javascript Usage Example
+// Get quantity for specific accessory
+const qty = accQty['kit_can_9k'] || 0;
+
+// Set quantity
+accQty['cordon_15'] = 2;
+
+// Iterate all selected accessories
+Object.entries(accQty).forEach(([id, qty]) => {
+  if (qty > 0) {
+    console.log(`${id}: ${qty}`);
+  }
+});
+```
+</CodeGroup>
+
+---
+
+## UI State
+
+### currentStep
+
+Current wizard step (1-5).
+
+<ResponseField name="type" type="number">
+  Steps: 1 = Equipment, 2 = Service, 3 = Accessories, 4 = Client, 5 = Summary
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let currentStep = 1;
+window.currentStep = currentStep;
+```
+
+```javascript Usage Example
+if (currentStep === 5) {
+  console.log('On summary page');
+}
+
+// Navigate to step
+goToStep(2); // Go to service selection
+```
+</CodeGroup>
+
+### quoteNumber
+
+Current quote number in format `CL-YYYY-####`.
+
+<ResponseField name="type" type="string">
+  Format: `'CL-2026-0042'`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let quoteNumber = '';
+```
+
+```javascript Usage Example
+console.log(quoteNumber); // 'CL-2026-0042'
+
+// Generated automatically on init
+await generateQuoteNumber();
+```
+</CodeGroup>
+
+### activeQuoteId
+
+Firebase quote ID if quote was loaded or saved.
+
+<ResponseField name="type" type="string | null">
+  Firebase document ID or `null`
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let activeQuoteId = null;
+```
+
+```javascript Usage Example
+if (activeQuoteId) {
+  console.log('Editing existing quote:', activeQuoteId);
+} else {
+  console.log('New quote');
+}
+```
+</CodeGroup>
+
+---
+
+## Ranking State
+
+### acRankings
+
+AC equipment popularity rankings (quote counts by model).
+
+<ResponseField name="type" type="object">
+  Object with model keys and count values
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let acRankings = {};
+```
+
+```javascript Usage Example
+// Get ranking count for a model
+const modelKey = window.RankingRepo.modelKey('LG Dual Cool 12K');
+const count = acRankings[modelKey] || 0;
+console.log(`Quoted ${count} times`);
+```
+</CodeGroup>
+
+### sortRankingMode
+
+Current ranking sort mode.
+
+<ResponseField name="type" type="number">
+  Values: `0` = Most quoted (desc), `1` = Least quoted (asc), `2` = Original order
+</ResponseField>
+
+<CodeGroup>
+```javascript Declaration
+let sortRankingMode = 0;
+```
+
+```javascript Usage Example
+// Check sort mode
+if (sortRankingMode === 0) {
+  console.log('Showing most quoted first');
+}
+
+// Toggle sort mode
+await toggleSortByPopular();
+```
+</CodeGroup>
+
+---
+
+## Helper Functions
+
+### equipKey
+
+Generates composite key for equipment selection map.
+
+<ParamField path="idx" type="number" required>
+  Equipment index in `allAC`
+</ParamField>
+
+<ParamField path="btu" type="number" required>
+  BTU capacity
+</ParamField>
+
+<ResponseField name="return" type="string">
+  Format: `"index__btu"` (e.g., `"5__18000"`)
+</ResponseField>
+
+<CodeGroup>
+```javascript Example
+const key = equipKey(3, 12000);
+console.log(key); // "3__12000"
+
+// Use with selectedEquipments
+const qty = selectedEquipments[equipKey(3, 12000)] || 0;
+```
+</CodeGroup>
+
+---
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Quote Persistence" icon="floppy-disk" href="/api/quote-persistence">
+    Save and load state
+  </Card>
+  <Card title="Services" icon="wrench" href="/api/services">
+    Service definitions
+  </Card>
+</CardGroup>

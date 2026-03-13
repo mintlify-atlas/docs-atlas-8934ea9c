@@ -1,0 +1,728 @@
+---
+title: PDF Generation
+description: Professional PDF quotations with jsPDF integration and customizable branding
+---
+
+CotizaClima generates professional PDF quotations using the jsPDF library with autoTable plugin, producing polished documents ready for client delivery.
+
+## Overview
+
+The PDF generation system creates comprehensive quotation documents that include:
+
+- Branded header with logo and company information
+- Client details and installation address
+- Itemized equipment, services, and accessories
+- Pricing breakdown with discount support
+- Service-specific terms and conditions
+- Professional footer with quote number
+
+## Library Integration
+
+The system uses jsPDF with the autoTable plugin (index.html:9-10):
+
+```html
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.6.0/jspdf.plugin.autotable.min.js"></script>
+```
+
+### Document Initialization (app.js:1136-1141)
+
+```javascript
+async function generatePDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ 
+    orientation: 'portrait', 
+    unit: 'mm', 
+    format: 'a4' 
+  });
+  
+  const pageW = 210;    // A4 width in mm
+  const margin = 18;    // Standard margin
+  let y = 0;            // Current vertical position
+  
+  // ... build document sections
+}
+```
+
+## Document Structure
+
+The PDF follows a structured layout built section by section:
+
+### 1. Header Section
+
+Branded header with company logo and quote metadata (app.js:1143-1184):
+
+<Steps>
+  <Step title="Background">
+    Light gray background bar (242, 244, 247) with dark blue accent stripe (79, 102, 132)
+    
+    ```javascript
+    doc.setFillColor(242, 244, 247);
+    doc.rect(0, 0, pageW, headerH, 'F');  // Full-width header
+    doc.setFillColor(79, 102, 132);
+    doc.rect(0, 0, 4, headerH, 'F');      // Left accent stripe
+    ```
+  </Step>
+  
+  <Step title="Logo">
+    PNG logo embedded as base64 data URL (20mm × 20mm)
+    
+    ```javascript
+    const logoSource = await getPdfLogoSource();
+    if (logoSource) {
+      doc.addImage(logoSource, 'PNG', logoX, logoY, logoSize, logoSize, undefined, 'NONE');
+    }
+    ```
+  </Step>
+  
+  <Step title="Company Name">
+    Large bold title with tagline
+    
+    ```javascript
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RefriPro Climatización', titleX, titleY);
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('"Controlamos el Clima"', titleX, subtitleY);
+    ```
+  </Step>
+  
+  <Step title="Quote Metadata">
+    Quote number, date, and validity period (right-aligned)
+    
+    ```javascript
+    doc.setFontSize(7.5);
+    doc.text(quoteNumber, pageW - margin, metaY1, { align: 'right' });
+    doc.text(date, pageW - margin, metaY2, { align: 'right' });
+    doc.text('Válido por 15 días', pageW - margin, metaY3, { align: 'right' });
+    ```
+  </Step>
+</Steps>
+
+### 2. Client Information
+
+Client details section with labeled fields (app.js:1187-1217):
+
+```javascript
+sectionHeader(doc, '  DATOS DEL CLIENTE', margin, y, pageW - margin*2);
+y += 10;
+
+const clientData = [
+  ['Nombre', clientName],
+  ...(clientRut ? [['RUT', clientRut]] : []),  // Conditional
+  ['Teléfono', clientPhone],
+  ...(clientEmail ? [['Email', clientEmail]] : []),
+  ['Dirección', `${clientAddress}${clientCity?', '+clientCity:''}${clientRegion?', '+clientRegion:''}`],
+  ...(clientProperty ? [['Inmueble', clientProperty]] : []),
+];
+
+clientData.forEach(([label, val]) => {
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(73, 89, 114);
+  doc.text(label + ':', margin + 2, y);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(31, 41, 55);
+  doc.text(val, margin + 35, y);
+  
+  y += 6;
+});
+```
+
+<Note>
+  Optional fields (RUT, email, property type) are conditionally included using spread syntax.
+</Note>
+
+### 3. Items Table
+
+AutoTable displays equipment, services, and accessories (app.js:1219-1286):
+
+#### Table Structure
+
+```javascript
+doc.autoTable({
+  startY: y,
+  head: [['DESCRIPCIÓN', 'TIPO', 'CANT.', 'P. NETO', 'P. c/IVA']],
+  body: tableBody,
+  margin: { left: margin, right: margin },
+  styles: { 
+    fontSize: 8, 
+    font: 'helvetica', 
+    cellPadding: 4, 
+    textColor: [61, 66, 77] 
+  },
+  headStyles: {
+    fillColor: [31, 53, 82],    // Dark blue header
+    textColor: [255, 255, 255],
+    fontStyle: 'bold',
+    fontSize: 8
+  },
+  alternateRowStyles: { 
+    fillColor: [247, 248, 250]  // Light gray zebra stripes
+  },
+  columnStyles: {
+    0: { cellWidth: 82 },               // Description
+    1: { cellWidth: 22, halign: 'center' },  // Type
+    2: { cellWidth: 14, halign: 'center' },  // Quantity
+    3: { cellWidth: 28, halign: 'right' },   // Net price
+    4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' }  // Price with tax
+  },
+});
+
+y = doc.lastAutoTable.finalY + 8;  // Continue after table
+```
+
+#### Equipment Rows (app.js:1229-1237)
+
+```javascript
+selectedEquipItems.forEach(item => {
+  tableBody.push([
+    `${item.ac.brand_model}\n${item.ac.type} · ${item.ac.refrigerant} · Kit ${item.ac.installation_kit}`,
+    `${(item.btu/1000).toFixed(0)}.000 BTU`,
+    String(item.qty),
+    `$${fmtNum(item.cap.net_price)}`,
+    `$${fmtNum(item.cap.price_with_tax * item.qty)}`
+  ]);
+});
+```
+
+#### Service Rows (app.js:1239-1248)
+
+```javascript
+selectedServiceItems.forEach(item => {
+  const serviceDesc = `${item.svc.name}\n${item.svc.desc} · ${item.qty} x $${fmtNum(item.unitPrice)}`;
+  tableBody.push([
+    serviceDesc,
+    'Servicio',
+    String(item.qty),
+    item.totalPrice > 0 ? `$${fmtNum(Math.round(item.totalPrice/1.19))}` : '$0',
+    item.totalPrice > 0 ? `$${fmtNum(item.totalPrice)}` : 'Sin costo'
+  ]);
+});
+```
+
+#### Accessory Rows (app.js:1250-1259)
+
+```javascript
+activeExtras.forEach(acc => {
+  const q = accQty[acc.id];
+  tableBody.push([
+    `${acc.name}\n${acc.desc}`,
+    'Accesorio',
+    String(q),
+    `$${fmtNum(acc.price)}`,
+    `$${fmtNum(acc.price * q)}`
+  ]);
+});
+```
+
+### 4. Totals Section
+
+Pricing summary with optional discount (app.js:1288-1333):
+
+<Tabs>
+  <Tab title="Without Discount">
+    ```javascript
+    // Subtotal row (light gray background)
+    doc.setFillColor(244, 245, 247);
+    doc.rect(totX, y, totW, 8 + pad * 2, 'F');
+    
+    doc.setFontSize(8.5);
+    doc.text('Subtotal:', totX + 4, row1Y);
+    doc.text(`$${fmtNum(Math.round(subtotal))}`, totX + totW - 4, row1Y, { align: 'right' });
+    
+    // Total row (dark blue background)
+    doc.setFillColor(31, 53, 82);
+    doc.rect(totX, y + bgH + 2, totW, 11, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.text('TOTAL:', totX + 4, y + bgH + 2 + 7.5);
+    doc.text(`$${fmtNum(Math.round(total))}`, totX + totW - 4, y + bgH + 2 + 7.5, { align: 'right' });
+    ```
+  </Tab>
+  
+  <Tab title="With Discount">
+    ```javascript
+    // Subtotal row
+    doc.text('Subtotal:', totX + 4, row1Y);
+    doc.text(`$${fmtNum(Math.round(subtotal))}`, totX + totW - 4, row1Y, { align: 'right' });
+    
+    // Discount row (orange text)
+    doc.setTextColor(139, 46, 15);
+    doc.text(`Descuento (${discPct}%):`, totX + 4, row2Y);
+    doc.text(`$${fmtNum(Math.round(discAmt))}`, totX + totW - 4, row2Y, { align: 'right' });
+    
+    // Total row (reflects discounted amount)
+    doc.text('TOTAL:', totX + 4, totalY);
+    doc.text(`$${fmtNum(Math.round(total))}`, totX + totW - 4, totalY, { align: 'right' });
+    ```
+  </Tab>
+</Tabs>
+
+### 5. Notes Sections
+
+Optional service and client notes (app.js:1335-1364):
+
+```javascript
+// Service notes
+const notes = document.getElementById('serviceNotes').value;
+if (notes) {
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(73, 89, 114);
+  doc.text('Observaciones:', margin, y);
+  y += 5;
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(52, 64, 84);
+  const lines = doc.splitTextToSize(notes, pageW - margin*2);  // Word wrap
+  doc.text(lines, margin, y);
+  y += lines.length * 4 + 6;
+}
+
+// Client notes (similar structure)
+const clientNotes = document.getElementById('clientNotes').value;
+if (clientNotes) {
+  // ... same pattern
+}
+```
+
+### 6. Service-Specific Information
+
+Terms and conditions vary by service type (app.js:1366-1503):
+
+#### Service Content Definition (app.js:14-56)
+
+```javascript
+const SERVICE_PDF_CONTENT = {
+  instalacion: {
+    title: 'Instalación de Aire Acondicionado',
+    relevant: [
+      'Agradecemos la confianza depositada en RefriPro.',
+      'La presente cotización considera la instalación de equipo de aire acondicionado tipo Split...',
+      'El servicio incluye instalación de unidad interior y exterior, conexión de cañerías...'
+    ],
+    extra: [
+      'La instalación considera condiciones estándar, incluyendo hasta 3 metros de interconexión...',
+      'Trabajos adicionales como mayor distancia de cañería, canaletas o soportes especiales...',
+      'El cliente debe contar con punto eléctrico operativo y acceso adecuado...',
+      'La instalación cuenta con 1 año de garantía por el trabajo realizado...'
+    ]
+  },
+  mantencion: { /* ... */ },
+  reparacion: { /* ... */ }
+};
+```
+
+#### Rendering Service Info (app.js:1451-1503)
+
+```javascript
+function appendServiceInfoToPdf(doc, startY, margin, pageW, selectedServiceItems) {
+  const keys = getServiceInfoKeys(selectedServiceItems);
+  if (!keys.length) return startY;
+  
+  let y = startY;
+  
+  keys.forEach((key, idx) => {
+    const block = SERVICE_PDF_CONTENT[key];
+    if (!block) return;
+    
+    // Section header
+    y = ensurePdfSpace(doc, y, 38);  // Check page overflow
+    sectionHeader(doc, `  INFORMACION RELEVANTE Y EXTRA · ${block.title.toUpperCase()}`, margin, y, contentWidth);
+    y += 8;
+    
+    // "Información relevante" paragraphs
+    doc.setFont('helvetica', 'bold');
+    doc.text('Información relevante:', margin, y);
+    y += 4;
+    
+    doc.setFont('helvetica', 'normal');
+    block.relevant.forEach(paragraph => {
+      const lines = doc.splitTextToSize(paragraph, contentWidth);
+      y = ensurePdfSpace(doc, y, lines.length * 4 + 2);
+      doc.text(lines, margin, y);
+      y += lines.length * 4 + 1;
+    });
+    
+    // "Información extra" bullet points
+    y += 2;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Información extra:', margin, y);
+    y += 4;
+    
+    doc.setFont('helvetica', 'normal');
+    block.extra.forEach(item => {
+      const lines = doc.splitTextToSize(`- ${item}`, contentWidth);
+      y = ensurePdfSpace(doc, y, lines.length * 4 + 1);
+      doc.text(lines, margin, y);
+      y += lines.length * 4 + 1;
+    });
+    
+    if (idx < keys.length - 1) y += 5;  // Spacing between services
+  });
+  
+  return y;
+}
+```
+
+<Note>
+  The "cambio" service automatically includes "instalacion" terms since it involves equipment replacement plus installation.
+</Note>
+
+### 7. Footer
+
+Branded footer with quote number (app.js:1369-1381):
+
+```javascript
+const pageH = 297;  // A4 height in mm
+
+// Dark blue footer bar with accent stripe
+doc.setFillColor(31, 53, 82);
+doc.rect(0, pageH - 18, pageW, 18, 'F');
+doc.setFillColor(79, 102, 132);
+doc.rect(0, pageH - 18, 4, 18, 'F');
+
+// Footer text
+doc.setFontSize(7.5);
+doc.setFont('helvetica', 'normal');
+doc.setTextColor(226, 229, 235);
+doc.text('RefriPro · Generado con CotizaClima App', margin + 4, pageH - 9);
+
+// Quote number (right-aligned)
+doc.setTextColor(238, 240, 244);
+doc.text(quoteNumber, pageW - margin, pageH - 9, { align: 'right' });
+```
+
+## Logo Customization
+
+The company logo is embedded as a base64 PNG (app.js:1386-1418):
+
+### Logo Configuration
+
+```javascript
+const PDF_LOGO_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAB9AAAAZuCAYAAAAcj73IAAEAAElEQVR42uz9...';
+
+function normalizePngDataUrl(input) {
+  if (!input) return null;
+  const raw = String(input).trim();
+  
+  if (!raw) return null;
+  
+  // Accept full data URL or raw base64
+  if (raw.startsWith('data:image/png;base64,')) {
+    return raw;
+  }
+  
+  // Clean whitespace from multiline base64
+  const cleanBase64 = raw.replace(/\s+/g, '');
+  return `data:image/png;base64,${cleanBase64}`;
+}
+
+async function getPdfLogoSource() {
+  if (pdfLogoCache) return pdfLogoCache;
+  
+  const dataUrl = normalizePngDataUrl(PDF_LOGO_BASE64);
+  if (!dataUrl) return null;
+  
+  pdfLogoCache = dataUrl;
+  return dataUrl;
+}
+```
+
+### Changing the Logo
+
+<Steps>
+  <Step title="Prepare PNG Image">
+    - Recommended size: 400×400 pixels (square)
+    - Transparent background preferred
+    - Keep file size under 100KB
+  </Step>
+  
+  <Step title="Convert to Base64">
+    Use online tool or command:
+    
+    ```bash
+    base64 logo.png > logo.txt
+    ```
+  </Step>
+  
+  <Step title="Update app.js">
+    Replace `PDF_LOGO_BASE64` constant:
+    
+    ```javascript
+    const PDF_LOGO_BASE64 = 'iVBORw0KGgoAAAANSUh...';
+    ```
+    
+    Can be raw base64 or full data URL.
+  </Step>
+  
+  <Step title="Test">
+    Generate a PDF and verify logo appearance, size, and positioning.
+  </Step>
+</Steps>
+
+<Note>
+  Logo is cached in memory after first load. Clear cache by reloading the page.
+</Note>
+
+## Page Overflow Handling
+
+The system automatically adds pages when content exceeds available space (app.js:1429-1433):
+
+```javascript
+function ensurePdfSpace(doc, y, neededHeight, pageH = 297) {
+  if (y + neededHeight <= pageH - 22) {  // 22mm reserved for footer
+    return y;
+  }
+  
+  doc.addPage();  // Start new page
+  return 20;      // Reset Y position with top margin
+}
+```
+
+Used before each major section:
+
+```javascript
+y = ensurePdfSpace(doc, y, 38);  // Check before section header
+sectionHeader(doc, 'SECTION TITLE', margin, y, width);
+```
+
+## Typography & Colors
+
+### Font Styles
+
+Helvetica (default in jsPDF) with weight variations:
+
+```javascript
+// Headers
+doc.setFont('helvetica', 'bold');
+doc.setFontSize(20);
+
+// Body text
+doc.setFont('helvetica', 'normal');
+doc.setFontSize(8);
+
+// Small text
+doc.setFontSize(7.5);
+```
+
+### Color Palette
+
+<CardGroup cols={3}>
+  <Card title="Primary Blue" icon="palette">
+    RGB: (31, 53, 82)
+    
+    Used for: Headers, footer, table header
+  </Card>
+  
+  <Card title="Accent Blue" icon="palette">
+    RGB: (79, 102, 132)
+    
+    Used for: Accent stripes
+  </Card>
+  
+  <Card title="Background Gray" icon="palette">
+    RGB: (242, 244, 247)
+    
+    Used for: Header background, alternating rows
+  </Card>
+  
+  <Card title="Text Dark" icon="palette">
+    RGB: (31, 41, 55)
+    
+    Used for: Body text
+  </Card>
+  
+  <Card title="Text Muted" icon="palette">
+    RGB: (73, 89, 114)
+    
+    Used for: Labels, secondary text
+  </Card>
+  
+  <Card title="Discount Orange" icon="palette">
+    RGB: (139, 46, 15)
+    
+    Used for: Discount amount
+  </Card>
+</CardGroup>
+
+## File Saving
+
+PDF downloads with quote number as filename (app.js:1382-1384):
+
+```javascript
+doc.save(`${quoteNumber}.pdf`);
+showToast('PDF generado correctamente', 'success');
+```
+
+Filename example: `CL-2026-0123.pdf`
+
+## Customization Examples
+
+### Changing Company Name
+
+```javascript
+// In generatePDF() function, around line 1170
+doc.text('Tu Empresa Climatización', titleX, titleY);  // Instead of 'RefriPro'
+doc.text('"Tu Slogan Aquí"', titleX, subtitleY);
+```
+
+### Adding Custom Section
+
+```javascript
+// After client notes section, before service info
+y = ensurePdfSpace(doc, y, 20);
+sectionHeader(doc, '  MI SECCIÓN PERSONALIZADA', margin, y, pageW - margin*2);
+y += 8;
+
+doc.setFontSize(8);
+doc.setFont('helvetica', 'normal');
+const customText = 'Texto de mi sección personalizada...';
+const lines = doc.splitTextToSize(customText, pageW - margin*2);
+doc.text(lines, margin, y);
+y += lines.length * 4 + 6;
+```
+
+### Modifying Table Columns
+
+```javascript
+// In autoTable configuration
+head: [['ITEM', 'DESCRIPCIÓN', 'PRECIO']],  // Custom columns
+columnStyles: {
+  0: { cellWidth: 20, halign: 'center' },
+  1: { cellWidth: 120 },
+  2: { cellWidth: 34, halign: 'right', fontStyle: 'bold' }
+},
+```
+
+### Changing Colors
+
+```javascript
+// Primary color (headers/footer)
+const PRIMARY_COLOR = [31, 53, 82];    // Dark blue
+const ACCENT_COLOR = [79, 102, 132];   // Light blue
+
+// Use throughout:
+doc.setFillColor(...PRIMARY_COLOR);
+doc.rect(0, 0, pageW, headerH, 'F');
+```
+
+## Error Handling
+
+PDF generation includes validation:
+
+```javascript
+function validateQuoteForPDF() {
+  const clientName = document.getElementById('clientName').value;
+  if (!clientName || !clientName.trim()) {
+    showToast('Ingresa el nombre del cliente', 'error');
+    goToStep(4);
+    return false;
+  }
+  
+  const clientAddress = document.getElementById('clientAddress').value;
+  if (!clientAddress || !clientAddress.trim()) {
+    showToast('Ingresa la dirección de instalación', 'error');
+    goToStep(4);
+    return false;
+  }
+  
+  return true;
+}
+```
+
+Call before generating:
+
+```javascript
+async function generatePDF() {
+  if (!validateQuoteForPDF()) return;
+  
+  // ... proceed with PDF generation
+}
+```
+
+## Performance
+
+### Generation Time
+
+Typical PDFs generate in:
+- Simple quote (1 equipment, 1 service): ~200ms
+- Complex quote (5+ items, multiple services, notes): ~500ms
+- With logo: +100ms (first generation only, then cached)
+
+### Optimization Tips
+
+<Accordion title="For Large Tables">
+  - autoTable handles pagination automatically
+  - No manual optimization needed for up to 50 rows
+  - Beyond 50 rows, consider summarizing accessories
+</Accordion>
+
+<Accordion title="For Logo">
+  - Cache logo data URL after first load
+  - Use PNG (faster than SVG in jsPDF)
+  - Keep logo file under 100KB
+  - Pre-compress images before base64 encoding
+</Accordion>
+
+<Accordion title="For Text Wrapping">
+  - `splitTextToSize()` is efficient for normal paragraphs
+  - Pre-calculate line counts for complex layouts
+  - Avoid excessive calls in tight loops
+</Accordion>
+
+## Browser Compatibility
+
+jsPDF works in all modern browsers:
+
+- Chrome/Edge: Full support
+- Firefox: Full support
+- Safari: Full support (desktop and iOS)
+- Mobile browsers: Full support
+
+<Note>
+  File download behavior varies by browser/device. Mobile browsers may open PDFs in viewer instead of downloading.
+</Note>
+
+## Accessibility
+
+PDF accessibility is limited but can be improved:
+
+- Use semantic structure (headers, paragraphs)
+- Include alt text for logo (not currently implemented)
+- Ensure sufficient color contrast (current palette passes WCAG AA)
+- Consider providing HTML alternative for screen readers
+
+## Future Enhancements
+
+<CardGroup cols={2}>
+  <Card title="Email Integration" icon="envelope">
+    Send PDF directly to client email from the app
+  </Card>
+  
+  <Card title="Multi-Page Branding" icon="file-lines">
+    Add header/footer to every page, not just first
+  </Card>
+  
+  <Card title="QR Code" icon="qrcode">
+    Embed QR code linking to quote tracking page
+  </Card>
+  
+  <Card title="Digital Signature" icon="signature">
+    Allow client to sign PDF electronically
+  </Card>
+  
+  <Card title="Template Selection" icon="palette">
+    Choose from multiple PDF designs/themes
+  </Card>
+  
+  <Card title="Localization" icon="language">
+    Support multiple languages in PDF output
+  </Card>
+</CardGroup>

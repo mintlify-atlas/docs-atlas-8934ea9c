@@ -1,0 +1,710 @@
+---
+title: 'Database Structure'
+description: 'Complete schema reference for Firebase Realtime Database in CotizaClima'
+---
+
+## Overview
+
+CotizaClima uses Firebase Realtime Database with a structured, user-scoped data model. This page documents the complete database schema, node structure, and data relationships.
+
+## Database URL
+
+The database URL is configured in `app.js:64-68`:
+
+```javascript
+const FIREBASE_CONNECTION = {
+  databaseURL: 'https://cotizaciones-app-ece65-default-rtdb.firebaseio.com/',
+  node: 'air_conditioners',
+  authToken: ''
+};
+```
+
+## Root Structure
+
+The database has five top-level nodes:
+
+```
+/
+├── air_conditioners/      # Product catalog (air conditioning units)
+├── accessories/           # Additional products and services
+├── quotes/               # User quotes (scoped by UID)
+│   └── {uid}/
+├── clients/              # Client records (scoped by UID)
+│   └── {uid}/
+└── rankings/             # Quote frequency stats (scoped by UID)
+    └── {uid}/
+```
+
+## Node Details
+
+### 1. air_conditioners
+
+**Type:** Array of equipment objects  
+**Access:** Read-only for authenticated users  
+**Location:** `app.js:169` (loaded via `loadFromFirebase()`)  
+
+#### Structure
+
+```json
+[
+  {
+    "marca": "Samsung",
+    "brand_model": "Samsung WindFree Elite",
+    "type": "Split Inverter",
+    "refrigerant": "R32",
+    "wifi": "Yes",
+    "warranty": "3 years",
+    "installation_kit": "Standard",
+    "capacities": [
+      {
+        "btu_capacity": 9000,
+        "net_price": 250000,
+        "price_with_tax": 297500
+      },
+      {
+        "btu_capacity": 12000,
+        "net_price": 320000,
+        "price_with_tax": 380800
+      }
+    ]
+  }
+]
+```
+
+#### Fields
+
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `marca` | string | Brand name (e.g., "Samsung", "LG") | Yes |
+| `brand_model` | string | Full model name | Yes |
+| `type` | string | Equipment type (e.g., "Split Inverter") | Yes |
+| `refrigerant` | string | Refrigerant type: "R32" or "R410" | Yes |
+| `wifi` | string | WiFi support: "Yes", "No", or "Optional" | Yes |
+| `warranty` | string | Warranty period (e.g., "3 years") | Yes |
+| `installation_kit` | string | Kit type: "Standard", "Complete", etc. | Yes |
+| `capacities` | array | Available BTU capacities with prices | Yes |
+
+#### Capacity Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `btu_capacity` | number | Capacity in BTU (e.g., 9000, 12000) |
+| `net_price` | number | Price without tax (IVA) |
+| `price_with_tax` | number | Price including 19% tax |
+
+#### Firebase Array Normalization
+
+Firebase stores arrays as numeric objects (`{0: {...}, 1: {...}}`). The app normalizes them back to arrays:
+
+```javascript app.js:309-331
+function normalizeFirebaseArrays(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(normalizeFirebaseArrays);
+
+  if (typeof obj === 'object') {
+    const keys = Object.keys(obj);
+    const allNumeric = keys.length > 0 && keys.every(k => /^\d+$/.test(k));
+
+    if (allNumeric) {
+      // Convert numeric object to array
+      return keys
+        .sort((a, b) => Number(a) - Number(b))
+        .map(k => normalizeFirebaseArrays(obj[k]));
+    }
+
+    // Recursively normalize nested objects
+    const result = {};
+    keys.forEach(k => result[k] = normalizeFirebaseArrays(obj[k]));
+    return result;
+  }
+
+  return obj;
+}
+```
+
+See `app.js:253` for usage.
+
+### 2. accessories
+
+**Type:** Array of accessory objects  
+**Access:** Read-only for authenticated users  
+**Location:** `app.js:279` (loaded via `loadAccessoriesFromFirebase()`)  
+
+#### Structure
+
+```json
+[
+  {
+    "id": "kit_can_9k",
+    "name": "Kit cañerías 9K",
+    "desc": "3 metros incluidos",
+    "price": 25000,
+    "categoria": "cañerias",
+    "color": "#4A90E2"
+  },
+  {
+    "id": "breaker_16a",
+    "name": "Breaker 16A",
+    "desc": "Protección térmica",
+    "price": 12000,
+    "categoria": "electrico",
+    "color": "#F5A623"
+  }
+]
+```
+
+#### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (kebab-case) |
+| `name` | string | Display name |
+| `desc` | string | Short description |
+| `price` | number | Unit price (with tax) |
+| `categoria` | string | Category: "cañerias", "electrico", "instalacion", etc. |
+| `color` | string | Hex color for UI display |
+
+### 3. quotes
+
+**Type:** Object (keyed by UID → quote ID)  
+**Access:** User can only read/write their own quotes  
+**Repository:** `quotes-repo.js`  
+
+#### Path Structure
+
+```
+quotes/
+  {uid}/              # User's unique ID
+    {quoteId}/        # Auto-generated quote ID
+      quoteNumber
+      clientName
+      equipment
+      ...
+```
+
+#### Quote Object
+
+```json
+{
+  "quoteNumber": "CL-2026-0001",
+  "ownerUid": "abc123xyz",
+  "createdAt": 1678901234000,
+  "updatedAt": 1678905678000,
+  "clientName": "Juan Pérez",
+  "clientRut": "12345678-9",
+  "clientPhone": "+56912345678",
+  "clientEmail": "juan@example.com",
+  "clientAddress": "Av. Libertador 1234",
+  "clientCity": "Santiago",
+  "clientRegion": "Región Metropolitana",
+  "clientProperty": "Casa particular",
+  "equipment": [
+    {
+      "marca": "Samsung",
+      "brandModel": "Samsung WindFree Elite",
+      "type": "Split Inverter",
+      "refrigerant": "R32",
+      "btu": 12000,
+      "qty": 2,
+      "unitPrice": 380800,
+      "totalPrice": 761600
+    }
+  ],
+  "services": [
+    {
+      "id": "instalacion",
+      "name": "Instalación nueva",
+      "qty": 2,
+      "unitPrice": 100000,
+      "totalPrice": 200000
+    }
+  ],
+  "accessories": [
+    {
+      "id": "kit_can_12_18k",
+      "name": "Kit cañerías 12-18K",
+      "qty": 1,
+      "unitPrice": 30000,
+      "totalPrice": 30000
+    }
+  ],
+  "discountPercent": 5,
+  "subtotal": 991600,
+  "total": 942020
+}
+```
+
+#### Operations
+
+Implemented in `quotes-repo.js`:
+
+<CodeGroup>
+```javascript List Quotes
+async function listQuotes(uid, idToken) {
+  const raw = await request(`quotes/${uid}`, idToken, { method: 'GET' });
+  if (!raw || typeof raw !== 'object') return [];
+
+  return Object.entries(raw)
+    .map(([id, payload]) => ({ id, ...(payload || {}) }))
+    .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - 
+                     Number(a.updatedAt || a.createdAt || 0));
+}
+```
+
+```javascript Get Single Quote
+async function getQuote(uid, idToken, quoteId) {
+  const payload = await request(`quotes/${uid}/${quoteId}`, idToken, 
+                                { method: 'GET' });
+  if (!payload) return null;
+  return { id: quoteId, ...payload };
+}
+```
+
+```javascript Save Quote
+async function saveQuote(uid, idToken, quotePayload, quoteId) {
+  const now = Date.now();
+  const basePayload = {
+    ...quotePayload,
+    ownerUid: uid,
+    updatedAt: now,
+    createdAt: quotePayload?.createdAt || now
+  };
+
+  if (quoteId) {
+    // Update existing
+    await request(`quotes/${uid}/${quoteId}`, idToken, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(basePayload)
+    });
+    return { id: quoteId, payload: basePayload };
+  }
+
+  // Create new
+  const created = await request(`quotes/${uid}`, idToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(basePayload)
+  });
+
+  const id = created?.name;
+  if (!id) throw new Error('No se pudo crear la cotización');
+  return { id, payload: basePayload };
+}
+```
+
+```javascript Delete Quote
+async function deleteQuote(uid, idToken, quoteId) {
+  await request(`quotes/${uid}/${quoteId}`, idToken, { method: 'DELETE' });
+  return true;
+}
+```
+</CodeGroup>
+
+### 4. clients
+
+**Type:** Object (keyed by UID → RUT)  
+**Access:** User can only read/write their own clients  
+**Repository:** `client-repo.js`  
+
+#### Path Structure
+
+```
+clients/
+  {uid}/                    # User's unique ID
+    {rutKey}/               # Normalized RUT (e.g., "12345678-9")
+      name
+      rut
+      phone
+      ...
+```
+
+<Note>
+  Clients are deduplicated by RUT. The `rutKey` is the normalized RUT (no dots, lowercase).
+</Note>
+
+#### Client Object
+
+```json
+{
+  "name": "Juan Pérez",
+  "rut": "12.345.678-9",
+  "rutKey": "12345678-9",
+  "phone": "+56912345678",
+  "email": "juan@example.com",
+  "address": "Av. Libertador 1234",
+  "city": "Santiago",
+  "region": "Región Metropolitana",
+  "property": "Casa particular",
+  "notes": "Cliente preferencial",
+  "createdAt": 1678901234000,
+  "updatedAt": 1678905678000,
+  "quoteIds": {
+    "-N1a2b3c4d5e6f7": true,
+    "-N2b3c4d5e6f7g8": true
+  }
+}
+```
+
+#### RUT Normalization
+
+```javascript client-repo.js:38-41
+function normalizeRut(rut) {
+  if (!rut || typeof rut !== 'string') return '';
+  return rut.replace(/\./g, '').replace(/\s/g, '').toLowerCase().trim();
+}
+```
+
+Examples:
+- `"12.345.678-9"` → `"12345678-9"`
+- `"12 345 678-9"` → `"12345678-9"`
+- `"12.345.678-K"` → `"12345678-k"`
+
+#### Client ID Resolution
+
+```javascript client-repo.js:44-50
+function resolveClientId(client) {
+  if (!client) return null;
+  const rut = normalizeRut(client.rut || '');
+  // Require at least one digit + hyphen + digit
+  if (!rut || !/\d/.test(rut) || rut.length < 3) return null;
+  return rut;
+}
+```
+
+#### Operations
+
+<CodeGroup>
+```javascript List Clients
+async function listClients(uid, idToken) {
+  const raw = await request('clients/' + uid, idToken, { method: 'GET' });
+  if (!raw || typeof raw !== 'object') return [];
+
+  return Object.entries(raw)
+    .map(([id, data]) => ({ id, ...(data || {}) }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'));
+}
+```
+
+```javascript Save Client
+async function saveClientWithId(uid, idToken, clientData, clientId) {
+  const now = Date.now();
+
+  // Fetch existing to preserve createdAt/quoteIds
+  let existing = null;
+  try {
+    existing = await request(`clients/${uid}/${clientId}`, idToken, 
+                            { method: 'GET' });
+  } catch (e) {
+    existing = null;
+  }
+
+  const payload = {
+    name: clientData.name || '',
+    rut: clientData.rut || '',
+    rutKey: clientId,
+    phone: clientData.phone || '',
+    email: clientData.email || '',
+    address: clientData.address || '',
+    city: clientData.city || '',
+    region: clientData.region || '',
+    property: clientData.property || '',
+    notes: clientData.notes || '',
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    quoteIds: { ...(existing?.quoteIds || {}) }
+  };
+
+  await request(`clients/${uid}/${clientId}`, idToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  return clientId;
+}
+```
+
+```javascript Link Quote to Client
+async function addQuoteToClient(uid, idToken, clientId, quoteId) {
+  if (!clientId || !quoteId) return;
+  await request(`clients/${uid}/${clientId}/quoteIds`, idToken, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [quoteId]: true })
+  });
+}
+```
+</CodeGroup>
+
+### 5. rankings
+
+**Type:** Object (keyed by UID → model key)  
+**Access:** User can only read/write their own rankings  
+**Repository:** `ranking-repo.js`  
+**Purpose:** Track quote frequency per equipment model  
+
+#### Path Structure
+
+```
+rankings/
+  {uid}/                        # User's unique ID
+    samsung_windfree_elite/     # Model key (normalized)
+      marca: "Samsung"
+      brandModel: "Samsung WindFree Elite"
+      count: 15                 # Times quoted
+      updatedAt: 1678901234000
+```
+
+#### Model Key Normalization
+
+```javascript ranking-repo.js:34-39
+function modelKey(brandModel) {
+  return (brandModel || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+```
+
+Examples:
+- `"Samsung WindFree Elite"` → `"samsung_windfree_elite"`
+- `"LG Dual Cool 12K"` → `"lg_dual_cool_12k"`
+
+#### Atomic Increment
+
+Rankings use Firebase server-side increment to avoid race conditions:
+
+```javascript ranking-repo.js:58-70
+const body = {
+  marca: item.marca || '',
+  brandModel: item.brandModel || '',
+  count: { '.sv': { increment: 1 } },  // Atomic increment
+  updatedAt: { '.sv': 'timestamp' }    // Server timestamp
+};
+
+await request(`rankings/${uid}/${key}`, idToken, {
+  method: 'PATCH',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+});
+```
+
+<Note>
+  Using `PATCH` with `.sv` special values ensures atomic operations even with concurrent requests.
+</Note>
+
+#### Operations
+
+<CodeGroup>
+```javascript Increment Rankings
+async function incrementAcRankings(uid, idToken, equipmentSelections) {
+  if (!uid || !idToken || !Array.isArray(equipmentSelections)) return;
+
+  // Deduplicate by brandModel (don't count multiple BTUs)
+  const seen = new Set();
+  const unique = equipmentSelections.filter(item => {
+    const key = modelKey(item.brandModel);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  await Promise.all(unique.map(item => {
+    const key = modelKey(item.brandModel);
+    const body = {
+      marca: item.marca || '',
+      brandModel: item.brandModel || '',
+      count: { '.sv': { increment: 1 } },
+      updatedAt: { '.sv': 'timestamp' }
+    };
+    return request(`rankings/${uid}/${key}`, idToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }));
+}
+```
+
+```javascript Get Rankings
+async function getRankings(uid, idToken) {
+  const raw = await request(`rankings/${uid}`, idToken, { method: 'GET' });
+  if (!raw || typeof raw !== 'object') return {};
+  
+  const result = {};
+  Object.entries(raw).forEach(([key, val]) => {
+    result[key] = (val && typeof val.count === 'number') ? val.count : 0;
+  });
+  return result;
+}
+```
+</CodeGroup>
+
+## Security Rules
+
+Here are the complete security rules that enforce the structure:
+
+```json
+{
+  "rules": {
+    "air_conditioners": {
+      ".read": "auth != null",
+      ".write": false
+    },
+    "accessories": {
+      ".read": "auth != null",
+      ".write": false
+    },
+    "quotes": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$quoteId": {
+          ".validate": "newData.hasChildren(['quoteNumber', 'ownerUid', 'createdAt', 'updatedAt'])",
+          "ownerUid": {
+            ".validate": "newData.val() === auth.uid"
+          }
+        }
+      }
+    },
+    "clients": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$rutKey": {
+          ".validate": "newData.hasChildren(['name', 'rutKey', 'createdAt', 'updatedAt'])"
+        }
+      }
+    },
+    "rankings": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "$modelKey": {
+          ".validate": "newData.hasChildren(['brandModel', 'count', 'updatedAt'])"
+        }
+      }
+    }
+  }
+}
+```
+
+### Rule Explanation
+
+<Accordion title="Catalog Nodes (air_conditioners, accessories)">
+  - **Read**: Any authenticated user
+  - **Write**: Disabled (managed via Firebase Console)
+  - **Purpose**: Shared product catalogs that all users can read but not modify
+</Accordion>
+
+<Accordion title="User-Scoped Nodes (quotes, clients, rankings)">
+  - **Read/Write**: Only the owner (where `auth.uid === $uid`)
+  - **Validation**: Ensures required fields are present
+  - **Purpose**: User data isolation - users can only access their own data
+</Accordion>
+
+## Data Flow Example
+
+Here's how data flows when creating a quote:
+
+<Steps>
+  <Step title="User selects equipment">
+    Data comes from `air_conditioners/` node
+    
+    ```javascript
+    const selectedAC = allAC[idx];
+    const capacity = selectedAC.capacities.find(c => c.btu_capacity === 12000);
+    ```
+  </Step>
+  
+  <Step title="User fills client info">
+    Client data is normalized and validated
+    
+    ```javascript
+    const clientData = {
+      name: 'Juan Pérez',
+      rut: '12.345.678-9',
+      phone: '+56912345678',
+      // ...
+    };
+    const clientId = ClientRepo.resolveClientId(clientData);
+    // → "12345678-9"
+    ```
+  </Step>
+  
+  <Step title="Quote is saved">
+    Saves to `quotes/{uid}/{quoteId}`
+    
+    ```javascript
+    const result = await QuotesRepo.saveQuote(uid, idToken, quotePayload);
+    // Returns: { id: '-N1a2b3c4d5e6f7', payload: {...} }
+    ```
+  </Step>
+  
+  <Step title="Client is synced (background)">
+    Client saved to `clients/{uid}/{rutKey}` with quote link
+    
+    ```javascript
+    await ClientRepo.syncClientForQuote(uid, idToken, clientData, quoteId);
+    // Saves to: clients/{uid}/12345678-9/
+    ```
+  </Step>
+  
+  <Step title="Rankings updated (background)">
+    Equipment quote count incremented
+    
+    ```javascript
+    await RankingRepo.incrementAcRankings(uid, idToken, equipmentSelections);
+    // Increments: rankings/{uid}/samsung_windfree_elite/count
+    ```
+  </Step>
+</Steps>
+
+## Querying Best Practices
+
+### Use Indexed Queries
+
+Firebase Realtime Database works best with shallow queries. Avoid deep nesting:
+
+```javascript
+// ✅ GOOD - Query specific path
+const quote = await getQuote(uid, idToken, quoteId);
+
+// ❌ BAD - Don't fetch all quotes to filter one
+const allQuotes = await listQuotes(uid, idToken);
+const quote = allQuotes.find(q => q.id === quoteId);
+```
+
+### Pagination
+
+For large lists, implement pagination:
+
+```javascript
+// Add limitToLast to query
+const endpoint = `${dbUrl}/quotes/${uid}.json?auth=${idToken}&limitToLast=20`;
+```
+
+### Caching
+
+Cache catalog data (air_conditioners, accessories) locally:
+
+```javascript
+// Load once on app init
+await loadFromFirebase(url, 'air_conditioners', token);
+await loadAccessoriesFromFirebase(url, token);
+
+// Use cached data for selections
+const equipment = allAC[selectedIndex];
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/quotes-repo">
+    Learn CRUD operations and data flow patterns
+  </Card>
+  <Card title="Quote Management" icon="file-invoice" href="/guides/creating-quotes">
+    Working with quotes in the application
+  </Card>
+</CardGroup>

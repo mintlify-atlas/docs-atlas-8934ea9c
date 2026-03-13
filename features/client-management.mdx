@@ -1,0 +1,558 @@
+---
+title: Client Management
+description: RUT-based client deduplication with automatic directory synchronization
+---
+
+CotizaClima's client management system automatically maintains a deduplicated directory of customers, linking all quotations to client records for easy retrieval and relationship tracking.
+
+## Overview
+
+The client management system provides:
+
+- **RUT-based deduplication**: Clients with the same RUT (Chilean tax ID) are automatically merged
+- **Automatic synchronization**: Client data updates whenever a quote is saved
+- **Quote association**: Bidirectional links between clients and their quotations
+- **Client directory**: Browse all clients with their quote history
+- **Non-invasive**: Works in the background without disrupting the quotation workflow
+
+## Client Data Structure
+
+Clients are stored in Firebase with this schema (client-repo.js:73-87):
+
+```javascript
+{
+  name: "Juan Pérez González",
+  rut: "12.345.678-9",
+  rutKey: "12345678-9",          // Normalized RUT (deduplication key)
+  phone: "+56 9 1234 5678",
+  email: "juan@ejemplo.cl",
+  address: "Calle Principal 123",
+  city: "Curicó",
+  region: "Maule",
+  property: "Casa",
+  notes: "Acceso por portón lateral",
+  createdAt: 1678901234000,      // Timestamp
+  updatedAt: 1678901234000,      // Timestamp
+  quoteIds: {
+    "-NqK7xZy8P9sQ1RtUv2w": true,
+    "-NqK8aB3cD4eF5gH6iJ7": true
+  }
+}
+```
+
+### Firebase Path
+
+```
+cotizaciones-app/
+└── clients/
+    └── {userId}/
+        └── {rutKey}/           # e.g., "12345678-9"
+            ├── name
+            ├── rut
+            ├── phone
+            ├── ...
+            └── quoteIds/
+                ├── -NqK7...: true
+                └── -NqK8...: true
+```
+
+## RUT-Based Deduplication
+
+### RUT Normalization
+
+The Chilean RUT (Rol Único Tributario) serves as the unique identifier for deduplication (client-repo.js:38-41):
+
+```javascript
+function normalizeRut(rut) {
+  if (!rut || typeof rut !== 'string') return '';
+  return rut
+    .replace(/\./g, '')      // Remove dots: "12.345.678-9" → "12345678-9"
+    .replace(/\s/g, '')      // Remove spaces
+    .toLowerCase()           // Lowercase check digit
+    .trim();
+}
+```
+
+**Examples**:
+- `12.345.678-9` → `12345678-9`
+- `12 345 678-9` → `12345678-9`
+- `12.345.678-K` → `12345678-k`
+
+### Client ID Resolution
+
+Determines if a client can be deduplicated (client-repo.js:44-50):
+
+```javascript
+function resolveClientId(client) {
+  if (!client) return null;
+  const rut = normalizeRut(client.rut || '');
+  
+  // Require at least one digit + hyphen + digit/letter (minimum valid RUT)
+  if (!rut || !/\d/.test(rut) || rut.length < 3) {
+    return null;  // Cannot deduplicate without valid RUT
+  }
+  
+  return rut;  // Use normalized RUT as Firebase key
+}
+```
+
+<Note>
+  Clients without a valid RUT are not persisted to the client directory. Their data still appears in the quotation but is not deduplicated across quotes.
+</Note>
+
+### Deduplication Behavior
+
+When saving a quote with an existing RUT:
+
+<Steps>
+  <Step title="Check for existing client">
+    Query Firebase: `GET /clients/{userId}/{rutKey}`
+  </Step>
+  
+  <Step title="Preserve history">
+    Keep original `createdAt` and existing `quoteIds`
+  </Step>
+  
+  <Step title="Update fields">
+    Overwrite name, phone, email, address with latest values
+  </Step>
+  
+  <Step title="Add quote reference">
+    Append new quote ID to `quoteIds` object
+  </Step>
+  
+  <Step title="Save atomically">
+    Use PUT to replace entire client record
+  </Step>
+</Steps>
+
+Implementation (client-repo.js:113-156):
+
+```javascript
+async function syncClientForQuote(uid, idToken, clientObject, quoteId) {
+  if (!clientObject || !clientObject.name) return null;
+  const clientId = resolveClientId(clientObject);
+  if (!clientId) return null;  // No RUT → skip sync
+  
+  try {
+    const now = Date.now();
+    
+    // Fetch existing to preserve createdAt and quoteIds
+    let existing = null;
+    try {
+      existing = await request(`clients/${uid}/${clientId}`, idToken, { method: 'GET' });
+    } catch (e) {
+      existing = null;
+    }
+    
+    const quoteIds = Object.assign({}, existing ? (existing.quoteIds || {}) : {});
+    if (quoteId) quoteIds[quoteId] = true;
+    
+    const payload = {
+      name: clientObject.name || '',
+      rut: clientObject.rut || '',
+      rutKey: clientId,
+      phone: clientObject.phone || '',
+      email: clientObject.email || '',
+      address: clientObject.address || '',
+      city: clientObject.city || '',
+      region: clientObject.region || '',
+      property: clientObject.property || '',
+      notes: clientObject.notes || '',
+      createdAt: (existing && existing.createdAt) ? existing.createdAt : now,
+      updatedAt: now,
+      quoteIds: quoteIds
+    };
+    
+    await request(`clients/${uid}/${clientId}`, idToken, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    return clientId;
+  } catch (e) {
+    // Silently fail — this is a background operation
+    return null;
+  }
+}
+```
+
+## Automatic Synchronization
+
+Client data synchronizes automatically during quote persistence (quote-persistence.js):
+
+```javascript
+async function persistCurrentQuote(status = 'draft') {
+  const snapshot = window.CotizPersistenceBridge.exportQuoteSnapshot(status);
+  const uid = window.FirebaseAuthService.getCurrentUser().uid;
+  const idToken = await window.FirebaseAuthService.getValidIdToken();
+  
+  // Save quote first
+  const result = await window.QuotesRepo.saveQuote(
+    uid, 
+    idToken, 
+    snapshot, 
+    activeQuoteId
+  );
+  
+  // Then sync client in background (fire-and-forget)
+  window.ClientRepo.syncClientForQuote(
+    uid,
+    idToken,
+    snapshot.client,
+    result.id
+  ).catch(() => {});
+  
+  return result;
+}
+```
+
+<Note>
+  Client sync is fire-and-forget. If it fails, the quote still saves successfully. This prevents network issues from blocking the user workflow.
+</Note>
+
+## Quote Association
+
+Bidirectional links connect clients and quotes:
+
+### Client → Quotes
+
+Stored in client record:
+
+```javascript
+quoteIds: {
+  "-NqK7xZy8P9sQ1RtUv2w": true,  // Quote A
+  "-NqK8aB3cD4eF5gH6iJ7": true   // Quote B
+}
+```
+
+### Quote → Client
+
+Stored in quote snapshot:
+
+```javascript
+{
+  quoteNumber: "CL-2026-0123",
+  client: {
+    name: "Juan Pérez",
+    rut: "12.345.678-9",
+    // ... other fields
+  },
+  // ... rest of quote data
+}
+```
+
+### Adding Quote to Existing Client
+
+Non-destructive PATCH operation (client-repo.js:99-106):
+
+```javascript
+async function addQuoteToClient(uid, idToken, clientId, quoteId) {
+  if (!clientId || !quoteId) return;
+  
+  await request(`clients/${uid}/${clientId}/quoteIds`, idToken, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [quoteId]: true })
+  });
+}
+```
+
+<Note>
+  PATCH only adds the new quote ID without overwriting existing ones. This is safer than GET → modify → PUT.
+</Note>
+
+## Client Directory
+
+The directory view displays all clients with their quote count:
+
+### Listing Clients
+
+Retrieve all clients for a user (client-repo.js:52-59):
+
+```javascript
+async function listClients(uid, idToken) {
+  const raw = await request(`clients/${uid}`, idToken, { method: 'GET' });
+  if (!raw || typeof raw !== 'object') return [];
+  
+  return Object.entries(raw)
+    .map(([id, data]) => ({ id, ...data }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'));
+}
+```
+
+Returns array sorted alphabetically by name:
+
+```javascript
+[
+  {
+    id: "12345678-9",
+    name: "Ana Martínez",
+    rut: "12.345.678-9",
+    phone: "+56 9 1234 5678",
+    quoteIds: { ... },
+    createdAt: 1678901234000
+  },
+  {
+    id: "98765432-1",
+    name: "Pedro López",
+    rut: "98.765.432-1",
+    phone: "+56 9 8765 4321",
+    quoteIds: { ... },
+    createdAt: 1678905678000
+  }
+]
+```
+
+### Client Card Display
+
+Each client shows:
+- Full name
+- RUT (formatted)
+- Contact information (phone, email)
+- Number of associated quotations
+- Last updated timestamp
+
+### Accessing Client Quotes
+
+To retrieve all quotes for a client:
+
+```javascript
+const client = await ClientRepo.getClient(uid, idToken, clientId);
+const quoteIds = Object.keys(client.quoteIds || {});
+
+const quotes = await Promise.all(
+  quoteIds.map(qid => QuotesRepo.getQuote(uid, idToken, qid))
+);
+```
+
+## Manual Client Creation
+
+Developers can manually create/update clients (client-repo.js:63-96):
+
+```javascript
+async function saveClientWithId(uid, idToken, clientData, clientId) {
+  const now = Date.now();
+  
+  // Get existing to preserve history
+  let existing = null;
+  try {
+    existing = await request(`clients/${uid}/${clientId}`, idToken, { method: 'GET' });
+  } catch (e) {
+    existing = null;
+  }
+  
+  const payload = {
+    name: clientData.name || '',
+    rut: clientData.rut || '',
+    rutKey: clientId,
+    phone: clientData.phone || '',
+    email: clientData.email || '',
+    address: clientData.address || '',
+    city: clientData.city || '',
+    region: clientData.region || '',
+    property: clientData.property || '',
+    notes: clientData.notes || '',
+    createdAt: (existing && existing.createdAt) ? existing.createdAt : now,
+    updatedAt: now,
+    quoteIds: Object.assign({}, existing ? (existing.quoteIds || {}) : {})
+  };
+  
+  await request(`clients/${uid}/${clientId}`, idToken, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  
+  return clientId;
+}
+```
+
+### Usage Example
+
+```javascript
+const clientData = {
+  name: "María González",
+  rut: "11.222.333-4",
+  phone: "+56 9 5555 1234",
+  email: "maria@empresa.cl",
+  address: "Av. Principal 456, Depto 302",
+  city: "Santiago",
+  region: "Metropolitana",
+  property: "Departamento"
+};
+
+const clientId = ClientRepo.resolveClientId(clientData);  // "11222333-4"
+
+await ClientRepo.saveClientWithId(uid, idToken, clientData, clientId);
+```
+
+## Client Form Integration
+
+The wizard's client form (step 4) collects data for deduplication:
+
+### Form Fields (index.html:159-230)
+
+```html
+<div class="page" id="page4">
+  <div class="section-title">Datos del cliente</div>
+  
+  <!-- Required for quote -->
+  <input type="text" id="clientName" placeholder="Juan Pérez González">
+  <input type="text" id="clientAddress" placeholder="Calle, número, comuna">
+  
+  <!-- Required for deduplication -->
+  <input type="text" id="clientRut" placeholder="12.345.678-9">
+  
+  <!-- Optional fields -->
+  <input type="tel" id="clientPhone" placeholder="+56 9 1234 5678">
+  <input type="email" id="clientEmail" placeholder="correo@ejemplo.cl">
+  <input type="text" id="clientCity" placeholder="Curicó">
+  <select id="clientRegion">
+    <option value="Maule">Maule</option>
+    <!-- ... 15 other regions -->
+  </select>
+  <select id="clientProperty">
+    <option value="Casa">Casa</option>
+    <option value="Departamento">Departamento</option>
+    <option value="Oficina">Oficina</option>
+    <option value="Local comercial">Local comercial</option>
+    <option value="Bodega/Industrial">Bodega/Industrial</option>
+  </select>
+  <textarea id="clientNotes" placeholder="Indicaciones especiales..."></textarea>
+</div>
+```
+
+### Data Extraction (app.js:1546-1558)
+
+```javascript
+function getClientSnapshot() {
+  return {
+    name: document.getElementById('clientName').value || '',
+    rut: document.getElementById('clientRut').value || '',
+    phone: document.getElementById('clientPhone').value || '',
+    email: document.getElementById('clientEmail').value || '',
+    address: document.getElementById('clientAddress').value || '',
+    city: document.getElementById('clientCity').value || '',
+    region: document.getElementById('clientRegion').value || '',
+    property: document.getElementById('clientProperty').value || '',
+    notes: document.getElementById('clientNotes').value || ''
+  };
+}
+```
+
+## GPS Address Autofill
+
+The "Usar GPS" button helps fill address fields automatically (app.js:1721-1892):
+
+```javascript
+function fillAddressFromGPS() {
+  setGpsButtonLoading(true);
+  setGpsStatus('Obteniendo ubicación...');
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      
+      // Reverse geocode using OpenStreetMap Nominatim
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?` +
+        `format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
+      );
+      const data = await response.json();
+      
+      // Fill form fields
+      const addressResult = buildStreetAddressWithFallback(data.address, data.display_name);
+      document.getElementById('clientAddress').value = addressResult.value;
+      
+      const city = pickCityFromAddress(data.address);
+      document.getElementById('clientCity').value = city;
+      
+      const region = mapRegionFromState(data.address.state);
+      if (region) document.getElementById('clientRegion').value = region;
+      
+      setGpsStatus('Dirección obtenida correctamente', false);
+    },
+    (error) => {
+      setGpsStatus('No se pudo obtener ubicación', true);
+      setGpsButtonLoading(false);
+    }
+  );
+}
+```
+
+<Note>
+  GPS functionality requires HTTPS and user permission. The feature degrades gracefully if unavailable.
+</Note>
+
+## Error Handling
+
+The client system is designed to never block the quotation workflow:
+
+### Silent Failures
+
+```javascript
+try {
+  await ClientRepo.syncClientForQuote(uid, idToken, client, quoteId);
+} catch (e) {
+  // Silent failure — don't interrupt user flow
+  console.warn('Client sync failed:', e);
+}
+```
+
+### Validation
+
+- **Name required**: Cannot save quote without client name
+- **RUT optional**: Quotes without RUT still save, but client won't be deduplicated
+- **Format validation**: RUT format not enforced (accepts any string)
+
+### Network Issues
+
+- Quote saves even if client sync fails
+- Client data still appears in PDF
+- Next quote save will retry sync
+
+## Best Practices
+
+<Accordion title="For Users">
+  - Always enter the client's RUT to enable deduplication
+  - Use consistent RUT formatting (system normalizes automatically)
+  - Update client info in latest quote (changes propagate to directory)
+  - Review client directory periodically to merge duplicates (manual)
+</Accordion>
+
+<Accordion title="For Developers">
+  - Never block on client operations (use fire-and-forget)
+  - Preserve `createdAt` and `quoteIds` when updating
+  - Use PATCH for adding quote IDs (safer than PUT)
+  - Normalize RUT before using as Firebase key
+  - Handle missing RUT gracefully (skip sync, don't error)
+</Accordion>
+
+## Data Privacy
+
+- Client data is scoped to user ID (no cross-user access)
+- Firebase rules should enforce: `clients/{userId}` only readable/writable by `{userId}`
+- No PII is logged to console or analytics
+- Client data remains in Firebase (not cached in localStorage)
+
+## Future Enhancements
+
+<CardGroup cols={2}>
+  <Card title="Bulk Import" icon="file-import">
+    Import clients from CSV/Excel for initial setup
+  </Card>
+  
+  <Card title="Duplicate Detection" icon="code-merge">
+    Fuzzy matching to find duplicate clients with typos
+  </Card>
+  
+  <Card title="Client Notes Timeline" icon="clock-rotate-left">
+    Track all interactions and quote history chronologically
+  </Card>
+  
+  <Card title="Export Client List" icon="file-export">
+    Download client directory as CSV for external CRM
+  </Card>
+</CardGroup>
